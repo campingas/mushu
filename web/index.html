@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0d1117">
+  <title>mushu</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="stylesheet" href="vendor/xterm.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="header">
+    <span id="hostname"></span>
+    <span id="chips"></span>
+    <button id="bell" title="Enable notifications">&#128276;</button>
+  </div>
+  <div id="status" class="hidden"></div>
+  <div id="sheet" class="hidden">
+    <div id="sheet-title"></div>
+    <div class="sheet-row">
+      <button data-act="keys" data-text="enter" class="approve">&#10003; Approve</button>
+      <button data-act="keys" data-text="esc">Esc</button>
+      <button data-act="keys" data-text="y">y</button>
+      <button data-act="keys" data-text="n">n</button>
+      <button data-act="keys" data-text="1">1</button>
+      <button data-act="keys" data-text="2">2</button>
+      <button data-act="keys" data-text="3">3</button>
+    </div>
+    <div class="sheet-row">
+      <input id="sheet-prompt" type="text" placeholder="send a prompt…" autocomplete="off">
+      <button id="sheet-send" data-act="prompt">Send</button>
+    </div>
+    <button id="sheet-close">close</button>
+  </div>
+  <div id="term"></div>
+  <div id="toolbar">
+    <button data-key="esc">Esc</button>
+    <button data-key="tab">Tab</button>
+    <button id="ctrl" class="mod">Ctrl</button>
+    <button data-key="up">&#9650;</button>
+    <button data-key="down">&#9660;</button>
+    <button data-key="left">&#9664;</button>
+    <button data-key="right">&#9654;</button>
+    <button data-key="ctrl-c">^C</button>
+    <button id="kbd">&#9000;</button>
+  </div>
+  <script src="vendor/xterm.js"></script>
+  <script src="vendor/addon-fit.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
