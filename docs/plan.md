@@ -16,7 +16,7 @@ Scope change: the phone terminal is now the PWA, so Blink Shell setup and phone 
 
 Gate: passed implicitly by the pivot decision; remaining phone verification moves to M2.
 
-## M2: mushu-server MVP with web terminal
+## M2: mushu-server MVP with web terminal (done)
 
 Goal: from Safari on the iPhone, on any network, open the same live Herdr session as the desktop.
 
@@ -35,9 +35,9 @@ Acceptance criteria:
 - Immich on robrog remains reachable at its existing URL.
 - Server unreachable from LAN and WAN addresses (tailnet bind verified).
 
-Gate: user validates the phone terminal experience.
+Gate: passed 2026-07-30, validated from the phone on wifi, 4G, and 5G.
 
-## M3: PWA install, agent inbox, and Web Push
+## M3: PWA install, agent inbox, and Web Push (done)
 
 Goal: mushu on the home screen, agent events as push notifications.
 
@@ -54,9 +54,9 @@ Acceptance criteria:
 - Tap lands in the PWA with the relevant session visible.
 - No terminal content in push payloads; payloads E2E encrypted.
 
-Gate: user validates notification quality and latency.
+Gate: passed 2026-07-30, test and live pushes delivered to a locked phone.
 
-## M4: Approvals from the phone
+## M4: Approvals from the phone (done)
 
 Goal: act on an agent directly from the inbox or notification.
 
@@ -71,7 +71,7 @@ Acceptance criteria:
 - Full approval round-trip from the iPhone on 4G.
 - A stale or replayed approval is rejected; every action is logged.
 
-Gate: user validates the approval flow end to end.
+Gate: passed 2026-07-30, approval round-trip validated on 4G.
 
 ## M5: Polish and shareability
 
@@ -81,7 +81,7 @@ Steps:
 
 1. Install story: single binary release, setup script or step-by-step doc covering hosts, tailnet, Serve, PWA install, and service files.
 2. Inbox refinement: grouping, priorities, quiet hours, multi-host UX.
-3. Honest limitations doc versus Moshi (voice input, image paste, Live Activities out of scope without a native app) and versus t3code.
+3. Honest limitations doc versus commercial alternatives (voice input, image paste, Live Activities out of scope without a native app) and versus t3code.
 
 Acceptance criteria:
 

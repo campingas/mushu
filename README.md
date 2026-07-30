@@ -1,36 +1,30 @@
 # mushu
 
-An open-source take on the [Moshi](https://getmoshi.app) experience for people who run their AI coding agents in [Ghostty](https://ghostty.org) and [Herdr](https://herdr.dev) on their own machines.
+A control surface on your phone for the AI coding agents running in [Ghostty](https://ghostty.org) and [Herdr](https://herdr.dev) on your own machines. Others sell this experience behind paywalls and closed code; mushu does it fully open source.
 
-Your agents (Claude Code, Codex, OpenCode, Cursor CLI) keep running on your desktop or server. Your phone becomes a control surface: a web terminal attached to the exact same live Herdr session as your desktop, an agent inbox, push notifications when an agent needs you, and one-tap approvals from anywhere (home wifi or any other network) over Tailscale.
+Your agents (Claude Code, Codex, OpenCode, Cursor CLI) keep running on your desktop or server. Your phone gets: a real terminal attached to the exact same live Herdr session as your desktop, an agent inbox, push notifications when an agent needs you, and one-tap approvals from anywhere (home wifi or any other network) over Tailscale.
 
 No app store terminal, no sshd required, no third-party relay: each host runs a single `mushu-server` binary (Rust) that serves a PWA over Tailscale Serve, tailnet-only. Inspired by [t3code](https://github.com/pingdotgg/t3code)'s control-surface shape, built on Herdr instead of custom agent orchestration.
 
-## Why not just use Moshi
+## Features
 
-Moshi is a good app, but it is a paid, closed product, and its Pro tier gates the parts that matter most (mosh transport, multiplexer pairing). This project builds the same experience in the open, on top of tools you already run, with a stronger privacy posture (tailnet-only, E2E-encrypted push).
-
-## How it maps to Moshi
-
-| Moshi feature | mushu equivalent |
-|---|---|
-| Mobile terminal app | PWA served by `mushu-server`, xterm.js over WebSocket, installable to the home screen |
-| SSH / mosh / ET transport | Tailscale + WebSocket reconnect; mosh kept as raw-terminal fallback |
-| tmux session persistence | Herdr persistent sessions (literally the same session as desktop Ghostty) |
-| moshi-hook agent events | `mushu-server` watching Herdr's socket API and agent hooks |
-| Push notifications and inbox | iOS Web Push (VAPID, E2E encrypted), agent inbox in the PWA |
-| Approvals from the phone | Inbox and notification actions driving `herdr agent send-keys` |
+- Web terminal (xterm.js over WebSocket) attached to your persistent Herdr session: the phone and the desktop see the same panes, agents, and scrollback.
+- Installable PWA with a touch toolbar (Esc, Tab, Ctrl, arrows, ^C) and aggressive reconnect: sessions survive network switches and phone sleep.
+- Agent inbox: live status chips (working, blocked, done, idle) for every agent Herdr tracks.
+- Push notifications on agent transitions (needs input, finished), end-to-end encrypted Web Push with no relay beyond Apple's push transit.
+- Approvals and remote driving: tap an agent to approve, deny, send keys, or submit a full prompt, guarded against stale state and audit-logged.
+- Privacy by construction: servers bind to loopback and are published tailnet-only through Tailscale Serve; nothing touches LAN, WAN, or third-party servers.
 
 ## Status
 
-- [x] M0: repo scaffold and docs (revised for the PWA pivot)
-- [x] M1: transport baseline (mosh fallback verified Mac to robrog over the tailnet)
-- [ ] M2: `mushu-server` MVP with web terminal
-- [ ] M3: PWA install, agent inbox, Web Push
-- [ ] M4: approvals from the phone
+- [x] M0: repo scaffold and docs
+- [x] M1: transport baseline (mosh fallback verified host-to-host over the tailnet)
+- [x] M2: `mushu-server` with web terminal, validated from the phone on wifi, 4G, and 5G
+- [x] M3: PWA install, agent inbox, Web Push, validated on a locked phone
+- [x] M4: approvals from the phone, round-trip validated on 4G
 - [ ] M5: polish and a reproducible setup for other Ghostty + Herdr users
 
-See [docs/plan.md](docs/plan.md) for milestones and acceptance criteria, [docs/tasks.md](docs/tasks.md) for the checklist, [docs/architecture.md](docs/architecture.md) for the design, and [docs/decisions.md](docs/decisions.md) for decision records including the superseded Blink/ntfy path.
+See [docs/plan.md](docs/plan.md) for milestones and acceptance criteria, [docs/tasks.md](docs/tasks.md) for the checklist, [docs/architecture.md](docs/architecture.md) for the design, and [docs/decisions.md](docs/decisions.md) for decision records.
 
 ## Requirements (target setup)
 
@@ -41,4 +35,4 @@ See [docs/plan.md](docs/plan.md) for milestones and acceptance criteria, [docs/t
 
 ## License
 
-MIT. mosh (optional fallback) is GPLv3 and used as an external tool, never redistributed here.
+GPLv3. Free software stays free: use it, ship it, but keep it open.

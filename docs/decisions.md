@@ -18,7 +18,7 @@ Superseded: with a PWA front end, iOS Web Push is strictly better (no extra app,
 
 Decision: implement the host-side daemon in Rust (originally scoped as a notification bridge, now the full mushu-server).
 
-Why: single static binary for macOS and Linux hosts, strong long-running daemon reliability, good WebSocket and pty ecosystem (axum, tokio, portable-pty), and it matches the project's spirit of doing properly in the open what Moshi did as a closed rewrite.
+Why: single static binary for macOS and Linux hosts, strong long-running daemon reliability, good WebSocket and pty ecosystem (axum, tokio, portable-pty), and it matches the project's spirit of building fully in the open what others ship closed.
 
 Alternatives rejected: TypeScript + Bun (faster iteration but heavier runtime for a daemon), Go (fine, but Rust preferred by the owner).
 
@@ -32,7 +32,7 @@ Why: mosh solved roaming for a raw terminal, but the PWA gets equivalent resilie
 
 Decision: mushu-server derives agent state from Herdr's socket API (`herdr api snapshot | schema`, `herdr agent wait | list | get`) and uses Claude Code hooks / Codex notify only as low-latency triggers.
 
-Why: Herdr already normalizes agent state across claude, codex, opencode, and cursor via its installed integrations, so mushu inherits multi-agent support instead of reimplementing per-agent detection the way moshi-hook does.
+Why: Herdr already normalizes agent state across claude, codex, opencode, and cursor via its installed integrations, so mushu inherits multi-agent support instead of reimplementing per-agent detection from scratch.
 
 ## D6: mushu PWA as the phone front end
 

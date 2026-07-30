@@ -55,7 +55,7 @@ Revised 2026-07-30 for the PWA pivot (decisions D6-D8). Dropped tasks from the B
 
 - [ ] Single binary release and setup docs/script.
 - [ ] Inbox grouping, priorities, quiet hours, multi-host UX.
-- [ ] Limitations doc versus Moshi and t3code.
+- [ ] Limitations doc versus commercial alternatives and t3code.
 - [ ] Gate: user validates and decides next direction.
 
 ## Dropped by the pivot (record only)
