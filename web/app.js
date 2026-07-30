@@ -118,37 +118,197 @@
     navigator.serviceWorker.register('/sw.js');
   }
 
-  const statusIcons = { working: '⚙', blocked: '⚠', done: '✓', idle: '·', unknown: '?' };
   let agentList = [];
+  let workspaceList = [];
+  let tabList = [];
+  const expandedWs = new Set();
+
+  function hostHue(name) {
+    let h = 7;
+    for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 360;
+    return h;
+  }
+
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  // Brand icons (Bootstrap Icons, currentColor) inlined so CSS can tint them.
+  const brandOf = { claude: 'claude', codex: 'openai' };
+  const icons = {};
+  for (const name of ['claude', 'openai']) {
+    fetch(`/vendor/${name}.svg`).then((r) => r.text()).then((svg) => { icons[name] = svg; });
+  }
+  const fallbackIcon = '<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><rect x="1" y="2" width="14" height="12" rx="2" fill="none" stroke="currentColor"/><path d="M4 6l2.5 2L4 10M8 10h4" stroke="currentColor" fill="none" stroke-linecap="round"/></svg>';
+  const iconFor = (agent) => icons[brandOf[agent]] || fallbackIcon;
+
+  const prio = { blocked: 3, working: 2, done: 1, idle: 0, unknown: 0 };
+
+  function renderHeader() {
+    const brands = new Map();
+    for (const a of agentList) {
+      const b = brands.get(a.agent) || { count: 0, status: 'idle' };
+      b.count += 1;
+      if ((prio[a.status] || 0) > (prio[b.status] || 0)) b.status = a.status;
+      brands.set(a.agent, b);
+    }
+    document.getElementById('chips').innerHTML = [...brands]
+      .map(
+        ([agent, b]) =>
+          `<span class="brand ${b.status}" title="${esc(agent)}">${iconFor(agent)}${b.count > 1 ? `<span class="count">${b.count}</span>` : ''}</span>`
+      )
+      .join('');
+  }
 
   async function refreshAgents() {
     try {
       const res = await fetch('/api/agents', { headers: { 'x-mushu-token': token } });
       if (!res.ok) return;
-      const { host, agents } = await res.json();
+      const { host, agents, workspaces, tabs } = await res.json();
       agentList = agents;
+      workspaceList = workspaces || [];
+      tabList = tabs || [];
+      document.documentElement.style.setProperty('--host-h', hostHue(host));
       document.getElementById('hostname').textContent = host;
-      document.getElementById('chips').innerHTML = agents
-        .map((a, i) => `<span class="chip ${a.status}" data-i="${i}">${statusIcons[a.status] || ''} ${a.agent} ${a.title}</span>`)
-        .join('');
+      renderHeader();
+      if (!drawer.classList.contains('hidden')) {
+        renderWorkspaces();
+        renderAgents();
+      }
     } catch (_) {}
   }
   refreshAgents();
   setInterval(() => document.visibilityState === 'visible' && refreshAgents(), 4000);
+
+  // --- workspace drawer (swipe down from the header) ---
+
+  const drawer = document.getElementById('drawer');
+  const backdrop = document.getElementById('backdrop');
+
+  function renderWorkspaces() {
+    document.getElementById('drawer-list').innerHTML = workspaceList
+      .map((w) => {
+        const expanded = expandedWs.has(w.workspace_id);
+        let html =
+          `<div class="ws ${w.status} ${w.focused ? 'focused' : ''}" data-id="${esc(w.workspace_id)}" data-tabs="${w.tab_count}">` +
+          `<span class="num">${w.number}</span>` +
+          `<span class="label">${esc(w.label)}</span>` +
+          `<span class="meta">${w.tab_count > 1 ? `${w.tab_count} tabs ${expanded ? '▾' : '▸'}` : '1 tab'}</span>` +
+          `<span class="dot"></span></div>`;
+        if (expanded) {
+          html += tabList
+            .filter((t) => t.workspace_id === w.workspace_id)
+            .map(
+              (t) =>
+                `<div class="ws tab ${t.status} ${t.focused ? 'focused' : ''}" data-tab-id="${esc(t.tab_id)}">` +
+                `<span class="num">${t.number}</span>` +
+                `<span class="label">${esc(t.label)}</span>` +
+                `<span class="dot"></span></div>`
+            )
+            .join('');
+        }
+        return html;
+      })
+      .join('');
+  }
+
+  function renderAgents() {
+    document.getElementById('agent-list').innerHTML = agentList
+      .map(
+        (a, i) =>
+          `<div class="ws agentrow ${a.status}" data-i="${i}">${iconFor(a.agent)}` +
+          `<span class="label">${esc(a.agent)}</span>` +
+          `<span class="t">${esc(a.title)}</span>` +
+          `<button class="act" data-i="${i}">&#8942;</button>` +
+          `<span class="dot"></span></div>`
+      )
+      .join('') || '<div class="ws"><span class="t">no agents detected</span></div>';
+  }
+
+  function openDrawer() {
+    renderWorkspaces();
+    renderAgents();
+    backdrop.classList.remove('hidden');
+    drawer.classList.remove('hidden');
+  }
+
+  function closeDrawer() {
+    backdrop.classList.add('hidden');
+    drawer.classList.add('hidden');
+  }
+
+  let touchY = null;
+  document.getElementById('header').addEventListener('touchstart', (ev) => {
+    touchY = ev.touches[0].clientY;
+  }, { passive: true });
+  document.getElementById('header').addEventListener('touchmove', (ev) => {
+    if (touchY !== null && ev.touches[0].clientY - touchY > 40) {
+      touchY = null;
+      openDrawer();
+    }
+  }, { passive: true });
+  drawer.addEventListener('touchstart', (ev) => {
+    touchY = ev.touches[0].clientY;
+  }, { passive: true });
+  drawer.addEventListener('touchmove', (ev) => {
+    if (touchY !== null && touchY - ev.touches[0].clientY > 40) {
+      touchY = null;
+      closeDrawer();
+    }
+  }, { passive: true });
+  document.getElementById('hostname').addEventListener('click', openDrawer);
+  backdrop.addEventListener('click', closeDrawer);
+
+  async function focusTarget(action, id) {
+    const res = await fetch('/api/action', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-mushu-token': token },
+      body: JSON.stringify({ pane_id: '', seq: 0, action, text: id }),
+    });
+    if (res.status === 204) {
+      closeDrawer();
+      refreshAgents();
+    } else {
+      setStatus(`switch failed (${res.status})`, false);
+    }
+  }
+
+  document.getElementById('drawer-list').addEventListener('click', (ev) => {
+    const row = ev.target.closest('.ws');
+    if (!row) return;
+    if (row.dataset.tabId) return focusTarget('focus-tab', row.dataset.tabId);
+    // Multi-tab workspace: first tap expands to its tabs, tap again to collapse.
+    if (Number(row.dataset.tabs) > 1) {
+      const id = row.dataset.id;
+      expandedWs.has(id) ? expandedWs.delete(id) : expandedWs.add(id);
+      return renderWorkspaces();
+    }
+    focusTarget('focus-workspace', row.dataset.id);
+  });
 
   // --- agent action sheet ---
 
   const sheet = document.getElementById('sheet');
   let sheetAgent = null;
 
-  document.getElementById('chips').addEventListener('click', (ev) => {
-    const chip = ev.target.closest('.chip');
-    if (!chip) return;
-    sheetAgent = agentList[Number(chip.dataset.i)];
+  document.getElementById('chips').addEventListener('click', openDrawer);
+
+  function openSheet(i) {
+    sheetAgent = agentList[i];
     if (!sheetAgent) return;
     document.getElementById('sheet-title').textContent =
-      `${sheetAgent.agent} · ${sheetAgent.agent_status} · ${sheetAgent.title}`;
+      `${sheetAgent.agent} · ${sheetAgent.status} · ${sheetAgent.title}`;
     sheet.classList.remove('hidden');
+  }
+
+  document.getElementById('agent-list').addEventListener('click', (ev) => {
+    const act = ev.target.closest('button.act');
+    if (act) {
+      closeDrawer();
+      return openSheet(Number(act.dataset.i));
+    }
+    const row = ev.target.closest('.agentrow');
+    if (!row) return;
+    const a = agentList[Number(row.dataset.i)];
+    if (a) focusTarget('focus-agent', a.pane_id);
   });
 
   document.getElementById('sheet-close').addEventListener('click', () => {

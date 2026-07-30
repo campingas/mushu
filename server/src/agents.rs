@@ -10,13 +10,36 @@ use crate::push::PushStore;
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Agent {
     pub agent: String,
-    #[serde(rename = "agent_status")]
+    #[serde(rename(deserialize = "agent_status"))]
     pub status: String,
     pub cwd: String,
     pub pane_id: String,
-    #[serde(rename = "terminal_title_stripped")]
+    #[serde(rename(deserialize = "terminal_title_stripped"))]
     pub title: String,
     pub state_change_seq: u64,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct Workspace {
+    pub workspace_id: String,
+    pub label: String,
+    pub number: u32,
+    pub focused: bool,
+    #[serde(rename(deserialize = "agent_status"))]
+    pub status: String,
+    pub pane_count: u32,
+    pub tab_count: u32,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct Tab {
+    pub tab_id: String,
+    pub workspace_id: String,
+    pub label: String,
+    pub number: u32,
+    pub focused: bool,
+    #[serde(rename(deserialize = "agent_status"))]
+    pub status: String,
 }
 
 #[derive(Deserialize)]
@@ -28,11 +51,15 @@ struct SnapshotResult {
     snapshot: Snapshot,
 }
 #[derive(Deserialize)]
-struct Snapshot {
-    agents: Vec<Agent>,
+pub struct Snapshot {
+    pub agents: Vec<Agent>,
+    #[serde(default)]
+    pub workspaces: Vec<Workspace>,
+    #[serde(default)]
+    pub tabs: Vec<Tab>,
 }
 
-pub async fn snapshot() -> Result<Vec<Agent>> {
+pub async fn snapshot() -> Result<Snapshot> {
     let out = Command::new("herdr")
         .args(["api", "snapshot"])
         .env_remove("HERDR_ENV")
@@ -41,7 +68,7 @@ pub async fn snapshot() -> Result<Vec<Agent>> {
         .context("failed to run herdr")?;
     anyhow::ensure!(out.status.success(), "herdr api snapshot failed");
     let env: SnapshotEnvelope = serde_json::from_slice(&out.stdout)?;
-    Ok(env.result.snapshot.agents)
+    Ok(env.result.snapshot)
 }
 
 fn short_dir(cwd: &str) -> String {
@@ -67,7 +94,31 @@ pub async fn run_action(req: &ActionRequest) -> Result<(), ActionError> {
     if req.text.len() > 4096 {
         return Err(ActionError::Invalid("text too long"));
     }
-    let agents = snapshot().await.map_err(ActionError::Failed)?;
+    if let Some(scope) = match req.action.as_str() {
+        "focus-workspace" => Some("workspace"),
+        "focus-tab" => Some("tab"),
+        "focus-agent" => Some("agent"),
+        _ => None,
+    } {
+        if !req.text.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, ':' | '_' | '-')) {
+            return Err(ActionError::Invalid("bad target id"));
+        }
+        let out = Command::new("herdr")
+            .args([scope, "focus", &req.text])
+            .env_remove("HERDR_ENV")
+            .output()
+            .await
+            .map_err(|e| ActionError::Failed(e.into()))?;
+        audit(req, scope, if out.status.success() { "ok" } else { "herdr-error" }).await;
+        return if out.status.success() {
+            Ok(())
+        } else {
+            Err(ActionError::Failed(anyhow::anyhow!(
+                String::from_utf8_lossy(&out.stderr).to_string()
+            )))
+        };
+    }
+    let agents = snapshot().await.map_err(ActionError::Failed)?.agents;
     let agent = agents
         .iter()
         .find(|a| a.pane_id == req.pane_id)
@@ -139,7 +190,7 @@ pub async fn notifier_loop(host: String, push: PushStore) {
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         let agents = match snapshot().await {
-            Ok(a) => a,
+            Ok(s) => s.agents,
             Err(e) => {
                 warn!("snapshot failed: {e:#}");
                 continue;

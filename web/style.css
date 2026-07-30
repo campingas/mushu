@@ -24,26 +24,80 @@ body {
   border-bottom: 1px solid #21262d;
 }
 
-#hostname { color: #c9d1d9; font-weight: bold; }
+#hostname {
+  padding: 5px 12px;
+  border-radius: 14px;
+  font-weight: bold;
+  color: #fff;
+  white-space: nowrap;
+  /* host color set from JS via --host-h */
+  background: hsl(var(--host-h, 210) 45% 26%);
+  border: 1px solid hsl(var(--host-h, 210) 60% 45%);
+}
 
 #chips {
   flex: 1;
   display: flex;
-  gap: 6px;
+  gap: 8px;
   overflow-x: auto;
+  white-space: nowrap;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+#chips::-webkit-scrollbar { display: none; }
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 14px;
+  background: #21262d;
+  border: 1px solid #30363d;
+  color: #8b949e;
+  scroll-snap-align: start;
+}
+
+.brand svg { width: 16px; height: 16px; }
+
+.brand .count { font-weight: bold; font-size: 12px; }
+
+.brand.working { color: #d29922; border-color: #d2992255; }
+.brand.done { color: #3fb950; }
+.brand.blocked {
+  color: #f85149;
+  border-color: #f85149;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% { box-shadow: 0 0 10px #f85149aa; }
+}
+
+.ws.agentrow svg { width: 18px; height: 18px; flex-shrink: 0; }
+.ws.agentrow.working svg { color: #d29922; }
+.ws.agentrow.blocked svg { color: #f85149; }
+.ws.agentrow.done svg { color: #3fb950; }
+
+.ws.agentrow .t {
+  color: #8b949e;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.chip {
-  padding: 2px 8px;
-  border-radius: 10px;
-  background: #21262d;
+.ws.agentrow .act {
+  padding: 6px 12px;
+  font: bold 14px ui-monospace, monospace;
   color: #c9d1d9;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  flex-shrink: 0;
 }
-
-.chip.working { color: #d29922; }
-.chip.blocked { color: #f85149; font-weight: bold; }
-.chip.done { color: #3fb950; }
 
 #bell {
   padding: 2px 8px;
@@ -101,6 +155,113 @@ body {
 
 #status.ok { background: #238636; }
 #status.hidden { display: none; }
+
+#backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+#backdrop.hidden { display: none; }
+
+#drawer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 30;
+  padding: calc(10px + env(safe-area-inset-top)) 12px 8px;
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  border-radius: 0 0 16px 16px;
+  transform: translateY(0);
+  transition: transform 0.2s ease;
+}
+
+#drawer.hidden {
+  transform: translateY(-100%);
+  transition: none;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.drawer-title {
+  font: 11px ui-monospace, monospace;
+  color: #8b949e;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+
+#drawer-list + .drawer-title { margin-top: 14px; }
+
+#drawer-list, #agent-list { display: flex; flex-direction: column; gap: 6px; }
+
+.ws {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #21262d;
+  border: 1px solid #30363d;
+  font: 14px ui-monospace, monospace;
+  color: #c9d1d9;
+}
+
+.ws:active { background: #30363d; }
+
+.ws.focused {
+  background: hsl(var(--host-h, 210) 45% 20%);
+  border-color: hsl(var(--host-h, 210) 60% 45%);
+}
+
+.ws .num {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0d1117;
+  color: #8b949e;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.ws.focused .num { color: #fff; background: hsl(var(--host-h, 210) 60% 35%); }
+
+.ws .label { flex: 1; font-weight: bold; overflow: hidden; text-overflow: ellipsis; }
+
+.ws .meta { color: #8b949e; font-size: 12px; }
+
+.ws.tab {
+  margin-left: 26px;
+  padding: 10px 12px;
+  background: #1a1f26;
+  font-size: 13px;
+}
+
+.ws.tab .num {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  font-size: 11px;
+}
+
+.ws .dot { width: 8px; height: 8px; border-radius: 50%; background: #484f58; flex-shrink: 0; }
+.ws.working .dot { background: #d29922; }
+.ws.blocked .dot { background: #f85149; box-shadow: 0 0 8px #f85149aa; }
+.ws.done .dot { background: #3fb950; }
+
+#drawer-handle {
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: #30363d;
+  margin: 10px auto 2px;
+}
 
 #sheet {
   position: absolute;

@@ -145,9 +145,15 @@ async fn api_agents(headers: HeaderMap, State(state): State<AppState>) -> Respon
         return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
     }
     match agents::snapshot().await {
-        Ok(list) => Json(serde_json::json!({ "host": *state.host, "agents": list })).into_response(),
+        Ok(s) => Json(serde_json::json!({
+            "host": *state.host, "agents": s.agents, "workspaces": s.workspaces, "tabs": s.tabs
+        }))
+        .into_response(),
         // No herdr on this host: an empty inbox, not an error.
-        Err(_) => Json(serde_json::json!({ "host": *state.host, "agents": [] })).into_response(),
+        Err(_) => Json(serde_json::json!({
+            "host": *state.host, "agents": [], "workspaces": [], "tabs": []
+        }))
+        .into_response(),
     }
 }
 
