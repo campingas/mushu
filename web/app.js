@@ -107,10 +107,116 @@
     if (!btn) return;
     if (btn.id === 'ctrl') return toggleCtrl();
     if (btn.id === 'kbd') return term.focus();
+    if (btn.id === 'mic') return openVoiceBar();
     const seq = keys[btn.dataset.key];
     if (seq) send(seq);
     term.focus();
   });
+
+  // --- voice / compose bar (on-device dictation via the iOS keyboard mic) ---
+
+  const voicebar = document.getElementById('voicebar');
+  const voiceInput = document.getElementById('voice-input');
+  let voiceTarget = 'terminal'; // 'terminal' or an agent pane_id
+
+  function renderVoiceTargets() {
+    const chips = [
+      `<span class="vt ${voiceTarget === 'terminal' ? 'selected' : ''}" data-t="terminal">terminal</span>`,
+      ...agentList.map(
+        (a) =>
+          `<span class="vt ${voiceTarget === a.pane_id ? 'selected' : ''}" data-t="${esc(a.pane_id)}">${iconFor(a.agent)}${esc(a.agent)}</span>`
+      ),
+    ];
+    document.getElementById('voice-targets').innerHTML = chips.join('');
+    document.getElementById('voice-send-enter').style.display =
+      voiceTarget === 'terminal' ? '' : 'none';
+  }
+
+  function openVoiceBar() {
+    if (!agentList.some((a) => a.pane_id === voiceTarget)) voiceTarget = 'terminal';
+    renderVoiceTargets();
+    voicebar.classList.remove('hidden');
+    voiceInput.focus();
+  }
+
+  function closeVoiceBar() {
+    voicebar.classList.add('hidden');
+    term.focus();
+  }
+
+  document.getElementById('voice-targets').addEventListener('click', (ev) => {
+    const chip = ev.target.closest('.vt');
+    if (!chip) return;
+    voiceTarget = chip.dataset.t;
+    renderVoiceTargets();
+    voiceInput.focus();
+  });
+
+  async function voiceSend(withEnter) {
+    const text = voiceInput.value;
+    if (!text.trim()) return;
+    if (voiceTarget === 'terminal') {
+      send(withEnter ? text + '\r' : text);
+      voiceInput.value = '';
+      closeVoiceBar();
+      return;
+    }
+    const agent = agentList.find((a) => a.pane_id === voiceTarget);
+    if (!agent) return setStatus('agent gone, pick a target', false);
+    const res = await fetch('/api/action', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-mushu-token': token },
+      body: JSON.stringify({ pane_id: agent.pane_id, seq: agent.state_change_seq, action: 'prompt', text }),
+    });
+    if (res.status === 204) {
+      voiceInput.value = '';
+      setStatus(`sent to ${agent.agent}`, true);
+      closeVoiceBar();
+    } else if (res.status === 409) {
+      setStatus('agent state changed, try again', false);
+      refreshAgents();
+    } else {
+      setStatus(`send failed (${res.status})`, false);
+    }
+  }
+
+  document.getElementById('voice-send').addEventListener('click', () => voiceSend(false));
+  document.getElementById('voice-send-enter').addEventListener('click', () => voiceSend(true));
+  document.getElementById('voice-close').addEventListener('click', closeVoiceBar);
+  voiceInput.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      voiceSend(voiceTarget === 'terminal');
+    }
+  });
+
+  // Web Speech API bonus: works in Safari tabs but not installed PWAs, so the
+  // in-page mic only appears where it can actually function.
+  const recBtn = document.getElementById('voice-rec');
+  if ('webkitSpeechRecognition' in window && !navigator.standalone) {
+    recBtn.classList.remove('hidden');
+    let rec = null;
+    recBtn.addEventListener('click', () => {
+      if (rec) {
+        rec.stop();
+        return;
+      }
+      rec = new webkitSpeechRecognition();
+      rec.interimResults = true;
+      rec.continuous = false;
+      const base = voiceInput.value;
+      rec.onresult = (ev) => {
+        voiceInput.value = base + Array.from(ev.results).map((r) => r[0].transcript).join('');
+      };
+      rec.onend = () => {
+        rec = null;
+        recBtn.classList.remove('recording');
+      };
+      rec.onerror = rec.onend;
+      recBtn.classList.add('recording');
+      rec.start();
+    });
+  }
 
   // --- PWA + inbox + push ---
 

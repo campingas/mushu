@@ -54,7 +54,20 @@
     <button data-key="left">&#9664;</button>
     <button data-key="right">&#9654;</button>
     <button data-key="ctrl-c">^C</button>
+    <button id="mic" title="Voice input">&#127908;</button>
     <button id="kbd">&#9000;</button>
+  </div>
+  <div id="voicebar" class="hidden">
+    <div id="voice-targets"></div>
+    <div class="sheet-row">
+      <input id="voice-input" type="text" placeholder="tap the mic key on your keyboard, then speak" autocomplete="off" autocapitalize="off" enterkeyhint="send">
+      <button id="voice-rec" class="hidden">&#9210;</button>
+    </div>
+    <div class="sheet-row">
+      <button id="voice-send" class="primary">Send</button>
+      <button id="voice-send-enter" class="primary">Send &#9166;</button>
+      <button id="voice-close">close</button>
+    </div>
   </div>
   <script src="vendor/xterm.js"></script>
   <script src="vendor/addon-fit.js"></script>
