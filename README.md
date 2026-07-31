@@ -44,10 +44,17 @@ For boot persistence run it as a launchd agent (macOS) or a systemd user service
 
 On the phone: open `https://<host>.<tailnet>.ts.net` in Safari, enter the token, Share, Add to Home Screen, open the app, tap the bell to enable notifications (iOS 16.4+).
 
-## Use cases to render in png
+## Test Renders
 
-- An agent hits a permission prompt while you IRL: lock screen ping, tap, approve, it keeps working.
-- On the go, check what your agents did and steer them, in the same session you left at your desk.
+**An agent hits a permission prompt while you're away:** lock screen ping, tap, approve, it keeps working.
+
+<img src="output/playwright/mushu-mobile-demo/mushu-agent-accept.png" alt="Agent approval prompt on mobile" width="480" />
+
+**On the go, check what your agents did and steer them** in the same session you left at your desk.
+
+<img src="output/playwright/mushu-mobile-demo/mushu-workspaces-tabs.png" alt="Workspaces and agent inbox on mobile" width="480" />
+
+<video src="output/playwright/mushu-mobile-demo/mushu-mobile-demo.mp4" controls width="480"></video>
 
 ## Status
 
