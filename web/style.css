@@ -130,6 +130,7 @@ body {
   flex: 1;
   min-height: 0;
   padding: 2px;
+  touch-action: none;
 }
 
 #toolbar {
@@ -138,13 +139,13 @@ body {
   padding: 6px;
   padding-bottom: calc(6px + var(--safe-bottom, env(safe-area-inset-bottom)));
   background: #161b22;
-  overflow-x: auto;
+  overflow: hidden;
 }
 
 #toolbar button {
-  flex: 1;
-  min-width: 40px;
-  padding: 10px 8px;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 10px 3px;
   font: 14px ui-monospace, monospace;
   color: #c9d1d9;
   background: #21262d;
@@ -155,6 +156,8 @@ body {
 
 #toolbar button:active { background: #30363d; }
 #toolbar button.mod.on { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+#toolbar button:disabled { opacity: 0.4; }
+#toolbar button.icon svg { display: block; width: 16px; height: 16px; margin: auto; fill: currentColor; }
 
 #status {
   position: absolute;
@@ -365,6 +368,8 @@ body {
 
 #voice-input {
   flex: 1;
+  min-width: 0;
+  resize: vertical;
   padding: 12px 10px;
   font: 14px ui-monospace, monospace;
   color: #c9d1d9;

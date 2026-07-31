@@ -42,6 +42,14 @@ Notifications are sent from the notifier loop in `agents.rs`, which polls every 
 
 Client state lives in `localStorage`: `mushu_instances` (host URLs and tokens), `mushu_active`, and `mushu_vault` when the Face ID lock is on. Anything added there must go through `saveInstances()`, which writes to the encrypted vault when it is enabled.
 
+## Mobile terminal controls
+
+The terminal toolbar is intentionally compact enough for a 320px viewport: Esc, Tab, Ctrl, ^C, a disabled move placeholder, and compose. A deliberate terminal tap toggles xterm keyboard focus; pointer movement does not toggle it. When Herdr has mouse tracking active, touch drags are translated into xterm wheel events so Herdr can scroll its pane history. Without mouse tracking, xterm keeps its native touch scrollback path. Toolbar quick keys restore the keyboard state that existed before the tap.
+
+Compose accepts multiline typed, pasted, or dictated text. Terminal sends go through xterm's paste path so multiline and terminal paste modes are preserved; Send + Enter adds a carriage return after the pasted text. Agent-target sends still use the prompt action unchanged. The Paste button uses the Clipboard API and falls back to instructions for pasting directly into the field when clipboard access is unavailable or denied.
+
+A PWA cannot remove or customize Safari's native iOS keyboard accessory bar. Terminal focus, scrolling, dictation, clipboard permission behavior, and the installed-PWA keyboard layout must be validated by the owner on an iPhone; desktop browser checks only verify the client logic.
+
 ## TLS constraint
 
 `web-push` reaches OpenSSL through its `ece` dependency on **every** platform, not only Linux, and offers no rustls option. Default builds therefore link the system OpenSSL, which on macOS means an absolute Homebrew path that does not exist on other machines. Released binaries are built with `--features vendored-tls`, which compiles OpenSSL from source and links it statically. Local development does not need the feature; anything producing a binary for someone else does.
