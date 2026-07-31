@@ -8,9 +8,24 @@ html, body {
 }
 
 body {
+  /* Pinned so iOS can never scroll the document; returning from the in-app
+     browser overlay used to leave the header stuck under the status bar. */
+  position: fixed;
+  inset: 0;
   display: flex;
   flex-direction: column;
+  padding-top: var(--safe-top, env(safe-area-inset-top));
+}
+
+/* iOS standalone loses env(safe-area-inset-*) after the in-app browser
+   overlay (host switch); JS reads this probe while the values are valid and
+   pins them as --safe-top / --safe-bottom. */
+#safe-probe {
+  position: fixed;
+  visibility: hidden;
+  pointer-events: none;
   padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 #header {
@@ -99,7 +114,7 @@ body {
   flex-shrink: 0;
 }
 
-#bell {
+#settings-btn {
   padding: 2px 8px;
   font-size: 14px;
   color: #8b949e;
@@ -107,8 +122,6 @@ body {
   border: 1px solid #30363d;
   border-radius: 6px;
 }
-
-#bell.on { color: #3fb950; border-color: #3fb950; }
 
 #term {
   flex: 1;
@@ -120,7 +133,7 @@ body {
   display: flex;
   gap: 6px;
   padding: 6px;
-  padding-bottom: calc(6px + env(safe-area-inset-bottom));
+  padding-bottom: calc(6px + var(--safe-bottom, env(safe-area-inset-bottom)));
   background: #161b22;
   overflow-x: auto;
 }
@@ -142,7 +155,7 @@ body {
 
 #status {
   position: absolute;
-  top: calc(8px + env(safe-area-inset-top));
+  top: calc(8px + var(--safe-top, env(safe-area-inset-top)));
   left: 50%;
   transform: translateX(-50%);
   z-index: 10;
@@ -171,7 +184,7 @@ body {
   right: 0;
   top: 0;
   z-index: 30;
-  padding: calc(10px + env(safe-area-inset-top)) 12px 8px;
+  padding: calc(10px + var(--safe-top, env(safe-area-inset-top))) 12px 8px;
   background: #161b22;
   border-bottom: 1px solid #30363d;
   border-radius: 0 0 16px 16px;
@@ -267,7 +280,7 @@ body {
   position: absolute;
   left: 8px;
   right: 8px;
-  top: calc(44px + env(safe-area-inset-top));
+  top: calc(44px + var(--safe-top, env(safe-area-inset-top)));
   z-index: 20;
   padding: 10px;
   background: #161b22;
@@ -311,7 +324,7 @@ body {
   position: absolute;
   left: 8px;
   right: 8px;
-  top: calc(44px + env(safe-area-inset-top));
+  top: calc(44px + var(--safe-top, env(safe-area-inset-top)));
   z-index: 20;
   padding: 10px;
   background: #161b22;
@@ -377,3 +390,69 @@ body {
 }
 
 #voicebar .sheet-row button.primary:disabled { opacity: 0.4; }
+
+/* Settings panel: saved instances + per-instance alert toggles. */
+#settings {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: calc(44px + var(--safe-top, env(safe-area-inset-top)));
+  z-index: 20;
+  padding: 10px;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#settings.hidden { display: none; }
+
+#settings-title {
+  font: 11px ui-monospace, monospace;
+  color: #8b949e;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+#instance-list { display: flex; flex-direction: column; gap: 6px; }
+
+.ws.inst .t, .ws.host .t {
+  color: #8b949e;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws.inst .alert, .ws.inst .rm {
+  padding: 8px 10px;
+  font: 12px ui-monospace, monospace;
+  color: #8b949e;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.ws.inst .alert.on { color: #3fb950; border-color: #3fb950; }
+
+#inst-url, #inst-token {
+  flex: 1;
+  padding: 10px 8px;
+  font: 13px ui-monospace, monospace;
+  color: #c9d1d9;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+}
+
+#inst-add, #settings-close {
+  padding: 10px 12px;
+  font: 13px ui-monospace, monospace;
+  color: #c9d1d9;
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+}

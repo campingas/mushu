@@ -87,6 +87,38 @@
     sendResize();
   });
 
+  // iOS standalone loses env(safe-area-inset-*) after the in-app browser
+  // overlay used for host switches, collapsing the header under the status
+  // bar. Read the probe while the values are valid and pin them as CSS vars;
+  // ignore zero readings so a buggy collapse can never shrink the layout.
+  function pinSafeArea() {
+    const probe = getComputedStyle(document.getElementById('safe-probe'));
+    const top = parseFloat(probe.paddingTop) || 0;
+    const bottom = parseFloat(probe.paddingBottom) || 0;
+    if (top > 0) document.documentElement.style.setProperty('--safe-top', top + 'px');
+    if (bottom > 0) document.documentElement.style.setProperty('--safe-bottom', bottom + 'px');
+  }
+  pinSafeArea();
+
+  // Coming back from the iOS in-app browser (host switch) can leave the
+  // WKWebView layout in a broken state that no in-page fix reliably repairs,
+  // so after a host switch the page fully reloads on return; otherwise just
+  // re-pin the insets and snap the scroll back.
+  function restoreViewport() {
+    if (sessionStorage.getItem('mushu_switched')) {
+      sessionStorage.removeItem('mushu_switched');
+      return location.reload();
+    }
+    pinSafeArea();
+    window.scrollTo(0, 0);
+    fit.fit();
+    sendResize();
+  }
+  window.addEventListener('pageshow', restoreViewport);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') restoreViewport();
+  });
+
   const keys = {
     esc: '\x1b',
     tab: '\t',
@@ -329,7 +361,19 @@
       .join('') || '<div class="ws"><span class="t">no agents detected</span></div>';
   }
 
+  function renderHosts() {
+    document.getElementById('host-list').innerHTML = instances
+      .map(
+        (inst) =>
+          `<div class="ws host ${inst.url === location.origin ? 'focused' : ''}" data-url="${esc(inst.url)}">` +
+          `<span class="label">${esc(shortHost(inst.url))}</span>` +
+          `<span class="t">${esc(new URL(inst.url).host)}</span></div>`
+      )
+      .join('');
+  }
+
   function openDrawer() {
+    renderHosts();
     renderWorkspaces();
     renderAgents();
     backdrop.classList.remove('hidden');
@@ -361,6 +405,13 @@
     }
   }, { passive: true });
   document.getElementById('hostname').addEventListener('click', openDrawer);
+  document.getElementById('host-list').addEventListener('click', (ev) => {
+    const row = ev.target.closest('.ws');
+    if (!row) return;
+    if (row.dataset.url === location.origin) return closeDrawer();
+    sessionStorage.setItem('mushu_switched', '1');
+    location.href = row.dataset.url;
+  });
   backdrop.addEventListener('click', closeDrawer);
 
   async function focusTarget(action, id) {
@@ -465,35 +516,173 @@
     return Uint8Array.from(raw, (c) => c.charCodeAt(0));
   }
 
-  const bell = document.getElementById('bell');
+  // --- instances (favorite mushu URLs, per-instance alerts) ---
+  // One local push subscription (this origin's VAPID key) serves every
+  // instance: hosts share the VAPID keypair, so alert on/off per instance is
+  // just this endpoint's presence in that instance's server-side sub store.
 
-  async function syncBell() {
-    const reg = await navigator.serviceWorker?.ready;
-    const sub = await reg?.pushManager?.getSubscription();
-    bell.classList.toggle('on', !!sub);
-  }
-  syncBell();
+  const settings = document.getElementById('settings');
 
-  bell.addEventListener('click', async () => {
-    if (!('Notification' in window) || !navigator.serviceWorker) {
-      return setStatus('push unsupported here; add to home screen first', false);
+  function loadInstances() {
+    let list = [];
+    try {
+      list = JSON.parse(localStorage.getItem('mushu_instances')) || [];
+    } catch (_) {}
+    if (!list.some((i) => i.url === location.origin)) {
+      list.unshift({ url: location.origin, token });
+      localStorage.setItem('mushu_instances', JSON.stringify(list));
     }
-    const perm = await Notification.requestPermission();
-    if (perm !== 'granted') return setStatus('notifications denied', false);
+    return list;
+  }
+
+  const instances = loadInstances();
+  const saveInstances = () => localStorage.setItem('mushu_instances', JSON.stringify(instances));
+  const shortHost = (url) => new URL(url).hostname.split('.')[0];
+  const instHeaders = (inst) => ({ 'content-type': 'application/json', 'x-mushu-token': inst.token });
+
+  async function localSubscription() {
+    const reg = await navigator.serviceWorker?.ready;
+    return (await reg?.pushManager?.getSubscription()) || null;
+  }
+
+  async function ensureSubscription() {
+    if (!('Notification' in window) || !navigator.serviceWorker) {
+      throw new Error('push unsupported here; add to home screen first');
+    }
+    if ((await Notification.requestPermission()) !== 'granted') {
+      throw new Error('notifications denied');
+    }
     const reg = await navigator.serviceWorker.ready;
-    const { key } = await (await fetch('/push/vapid')).json();
-    const sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: b64ToBytes(key),
-    });
-    const json = sub.toJSON();
-    await fetch('/push/subscribe', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-mushu-token': token },
-      body: JSON.stringify({ endpoint: json.endpoint, p256dh: json.keys.p256dh, auth: json.keys.auth }),
-    });
-    bell.classList.add('on');
-    setStatus('notifications enabled', true);
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      const { key } = await (await fetch('/push/vapid')).json();
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: b64ToBytes(key),
+      });
+    }
+    return sub;
+  }
+
+  async function renderInstances() {
+    document.getElementById('instance-list').innerHTML = instances
+      .map((inst, i) => {
+        const current = inst.url === location.origin;
+        return (
+          `<div class="ws inst ${current ? 'focused' : ''}">` +
+          `<span class="label">${esc(shortHost(inst.url))}</span>` +
+          `<span class="t">${esc(new URL(inst.url).host)}</span>` +
+          `<button class="alert" data-alert="${i}">&#8230;</button>` +
+          (current ? '' : `<button class="rm" data-rm="${i}">&#10005;</button>`) +
+          `</div>`
+        );
+      })
+      .join('');
+    const sub = await localSubscription();
+    await Promise.all(
+      instances.map(async (inst, i) => {
+        const btn = document.querySelector(`[data-alert="${i}"]`);
+        if (!btn) return;
+        if (!sub) return setAlertBtn(btn, false);
+        try {
+          const res = await fetch(inst.url + '/push/status', {
+            method: 'POST',
+            headers: instHeaders(inst),
+            body: JSON.stringify({ endpoint: sub.endpoint }),
+          });
+          if (!res.ok) return void (btn.textContent = res.status === 401 ? 'bad token' : `err ${res.status}`);
+          setAlertBtn(btn, (await res.json()).subscribed);
+        } catch (_) {
+          btn.textContent = 'offline';
+        }
+      })
+    );
+  }
+
+  function setAlertBtn(btn, on) {
+    btn.textContent = on ? 'alerts on' : 'alerts off';
+    btn.classList.toggle('on', on);
+  }
+
+  async function toggleAlerts(i, on) {
+    const inst = instances[i];
+    try {
+      const sub = await ensureSubscription();
+      const json = sub.toJSON();
+      const body = on
+        ? { endpoint: json.endpoint, p256dh: json.keys.p256dh, auth: json.keys.auth }
+        : { endpoint: json.endpoint };
+      const res = await fetch(inst.url + (on ? '/push/subscribe' : '/push/unsubscribe'), {
+        method: 'POST',
+        headers: instHeaders(inst),
+        body: JSON.stringify(body),
+      });
+      if (res.status === 204 || res.status === 404) {
+        setStatus(`${shortHost(inst.url)} alerts ${on ? 'on' : 'off'}`, true);
+      } else {
+        setStatus(`toggle failed (${res.status})`, false);
+      }
+    } catch (e) {
+      setStatus(e.message || 'toggle failed', false);
+    }
+    renderInstances();
+  }
+
+  async function addInstance() {
+    const urlInput = document.getElementById('inst-url');
+    const tokenInput = document.getElementById('inst-token');
+    let url = urlInput.value.trim();
+    const instToken = tokenInput.value.trim();
+    if (!url) return;
+    if (!/^https?:/.test(url)) url = 'https://' + url;
+    try {
+      url = new URL(url).origin;
+    } catch (_) {
+      return setStatus('invalid url', false);
+    }
+    if (instances.some((i) => i.url === url)) return setStatus('already saved', false);
+    try {
+      const res = await fetch(url + '/api/agents', { headers: { 'x-mushu-token': instToken } });
+      if (res.status === 401) return setStatus('bad token for that instance', false);
+      if (!res.ok) return setStatus(`instance error (${res.status})`, false);
+      const { key } = await (await fetch(url + '/push/vapid')).json();
+      const { key: localKey } = await (await fetch('/push/vapid')).json();
+      if (key !== localKey) {
+        setStatus('added, but VAPID keys differ: its alerts cannot reach this app', false);
+      } else {
+        setStatus(`${shortHost(url)} added`, true);
+      }
+    } catch (_) {
+      return setStatus('instance unreachable', false);
+    }
+    instances.push({ url, token: instToken });
+    saveInstances();
+    urlInput.value = '';
+    tokenInput.value = '';
+    renderInstances();
+  }
+
+  document.getElementById('settings-btn').addEventListener('click', () => {
+    settings.classList.remove('hidden');
+    renderInstances();
+  });
+  document.getElementById('settings-close').addEventListener('click', () => {
+    settings.classList.add('hidden');
+    term.focus();
+  });
+  document.getElementById('inst-add').addEventListener('click', addInstance);
+  document.getElementById('instance-list').addEventListener('click', (ev) => {
+    const alertBtn = ev.target.closest('button.alert');
+    if (alertBtn) {
+      const i = Number(alertBtn.dataset.alert);
+      return toggleAlerts(i, !alertBtn.classList.contains('on'));
+    }
+    const rmBtn = ev.target.closest('button.rm');
+    if (rmBtn) {
+      instances.splice(Number(rmBtn.dataset.rm), 1);
+      saveInstances();
+      renderInstances();
+    }
   });
 
   connect();

@@ -95,6 +95,26 @@ impl PushStore {
         info!("push subscription added ({} total)", subs.len());
     }
 
+    pub async fn unsubscribe(&self, endpoint: &str) -> bool {
+        let mut subs = self.inner.lock().await;
+        let before = subs.len();
+        subs.retain(|s| s.endpoint != endpoint);
+        let removed = subs.len() != before;
+        if removed {
+            self.persist(&subs).await;
+            info!("push subscription removed ({} total)", subs.len());
+        }
+        removed
+    }
+
+    pub async fn is_subscribed(&self, endpoint: &str) -> bool {
+        self.inner
+            .lock()
+            .await
+            .iter()
+            .any(|s| s.endpoint == endpoint)
+    }
+
     pub async fn send_to_all(&self, title: &str, body: &str, host: &str) {
         let subs = self.inner.lock().await.clone();
         if subs.is_empty() {

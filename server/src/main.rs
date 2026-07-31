@@ -17,7 +17,7 @@ use axum::{
         ws::{Message, WebSocket},
         Query, State, WebSocketUpgrade,
     },
-    http::{header, HeaderMap, StatusCode, Uri},
+    http::{header, HeaderMap, HeaderName, Method, StatusCode, Uri},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -27,6 +27,7 @@ use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use rust_embed::RustEmbed;
 use serde::Deserialize;
 use tokio::sync::{mpsc, watch, Notify};
+use tower_http::cors::{Any, CorsLayer};
 use tracing::{error, info, warn};
 
 #[derive(RustEmbed)]
@@ -191,6 +192,13 @@ async fn main() -> Result<()> {
 
     let notifier_task = tokio::spawn(agents::notifier_loop(host, push_store, shutdown_rx));
 
+    // Other mushu instances' PWAs call /push/* and /api/agents cross-origin;
+    // auth still comes from the x-mushu-token header on every sensitive route.
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods([Method::GET, Method::POST])
+        .allow_headers([header::CONTENT_TYPE, HeaderName::from_static("x-mushu-token")]);
+
     let app = Router::new()
         .route("/healthz", get(|| async { "ok" }))
         .route("/ws", get(ws_upgrade))
@@ -198,7 +206,10 @@ async fn main() -> Result<()> {
         .route("/api/action", post(api_action))
         .route("/push/vapid", get(push_vapid))
         .route("/push/subscribe", post(push_subscribe))
+        .route("/push/unsubscribe", post(push_unsubscribe))
+        .route("/push/status", post(push_status))
         .route("/push/test", post(push_test))
+        .layer(cors)
         .fallback(get(static_asset))
         .with_state(state);
 
@@ -311,6 +322,38 @@ async fn push_subscribe(
     }
     state.push.subscribe(sub).await;
     StatusCode::NO_CONTENT.into_response()
+}
+
+#[derive(Deserialize)]
+struct EndpointReq {
+    endpoint: String,
+}
+
+async fn push_unsubscribe(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(req): Json<EndpointReq>,
+) -> Response {
+    if !authed(&headers, &state) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+    if state.push.unsubscribe(&req.endpoint).await {
+        StatusCode::NO_CONTENT.into_response()
+    } else {
+        (StatusCode::NOT_FOUND, "not subscribed").into_response()
+    }
+}
+
+async fn push_status(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(req): Json<EndpointReq>,
+) -> Response {
+    if !authed(&headers, &state) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+    Json(serde_json::json!({ "subscribed": state.push.is_subscribed(&req.endpoint).await }))
+        .into_response()
 }
 
 async fn push_test(headers: HeaderMap, State(state): State<AppState>) -> Response {

@@ -13,13 +13,16 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <div id="safe-probe"></div>
   <div id="header">
     <span id="hostname"></span>
     <span id="chips"></span>
-    <button id="bell" title="Enable notifications">&#128276;</button>
+    <button id="settings-btn" title="Settings">&#9881;</button>
   </div>
   <div id="backdrop" class="hidden"></div>
   <div id="drawer" class="hidden">
+    <div class="drawer-title">hosts</div>
+    <div id="host-list"></div>
     <div class="drawer-title">workspaces</div>
     <div id="drawer-list"></div>
     <div class="drawer-title">agents</div>
@@ -68,6 +71,18 @@
       <button id="voice-send-enter" class="primary">Send &#9166;</button>
       <button id="voice-close">close</button>
     </div>
+  </div>
+  <div id="settings" class="hidden">
+    <div id="settings-title">instances</div>
+    <div id="instance-list"></div>
+    <div class="sheet-row">
+      <input id="inst-url" type="url" placeholder="https://host.tailnet.ts.net" autocomplete="off" autocapitalize="off">
+    </div>
+    <div class="sheet-row">
+      <input id="inst-token" type="password" placeholder="instance token" autocomplete="off">
+      <button id="inst-add">Add</button>
+    </div>
+    <button id="settings-close">close</button>
   </div>
   <script src="vendor/xterm.js"></script>
   <script src="vendor/addon-fit.js"></script>

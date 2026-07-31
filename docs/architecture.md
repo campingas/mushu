@@ -52,6 +52,8 @@ Constraint on robrog: Tailscale Serve already proxies Immich on 443. mushu-serve
 
 Sent by mushu-server directly through Apple's push service using VAPID. Payloads are end-to-end encrypted (RFC 8291), so APNs transit reveals nothing. No third-party relay, no extra app. Requires the PWA to be added to the home screen.
 
+Multi-instance alerts: all hosts share one VAPID keypair (`~/.config/mushu/vapid.key` copied between hosts), so the PWA's single push subscription can be delivered to by any instance. The settings page stores instance URLs and tokens, and toggling alerts for an instance adds or removes this subscription in that instance's server-side store via `/push/subscribe`, `/push/unsubscribe`, and `/push/status` (all token-authed, CORS-enabled for cross-instance calls).
+
 ### Fallback transport: mosh (installed, optional)
 
 mosh 1.4.0 is installed on both hosts and verified Mac to robrog over the tailnet. It remains the raw-terminal fallback into robrog from any mosh-capable client if the web path is ever down. The Mac deliberately has Remote Login (sshd) off; it is reachable only through mushu-server on its tailnet address.
@@ -62,4 +64,4 @@ mosh 1.4.0 is installed on both hosts and verified Mac to robrog over the tailne
 - No sshd on the Mac; the phone's only path into the Mac is mushu-server.
 - Action endpoints authenticate (token at minimum) even though tailnet-only, because they execute keystrokes into live agent sessions; approvals expire and are audit-logged.
 - Web Push payloads are E2E encrypted; no terminal content in notification payloads regardless.
-- No credentials in this repo or in the PWA; the PWA holds only its push subscription and server URLs.
+- No credentials in this repo; the PWA holds its push subscription plus saved instance URLs and their access tokens in localStorage on the phone.
