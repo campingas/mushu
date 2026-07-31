@@ -30,6 +30,8 @@ To work on multi-host behaviour, start a second instance on another port with a 
 
 **The web assets are embedded into the binary** at compile time by `rust-embed` (`#[derive(RustEmbed)] #[folder = "../web"]`). Editing anything in `web/` therefore requires rebuilding the binary, and cargo does not always notice a change confined to `web/`; touch a source file or `cargo clean -p mushu-server` if a change seems not to apply. Assets are served with `Cache-Control: no-cache` because without it browsers kept serving the pre-upgrade bundle after a deploy.
 
+`web/manifest.webmanifest` deliberately has **no `start_url`**. Do not add one back: iOS launches an installed web app at `start_url` when it is present, which discards the `#token` fragment that `mushuctl pair` relies on, and the freshly installed app then prompts for a token. With the key absent, `start_url` defaults to the document URL that was added to the home screen, so the fragment survives the install.
+
 ## Extending
 
 Adding an endpoint: register it on the router in `main.rs`, and gate anything sensitive with the existing `authed(&headers, &state)` helper, which compares the `x-mushu-token` header in constant time. The `CorsLayer` already allows that header cross-origin, which is what lets one installed app drive every host (D9); a new endpoint the client calls on *other* instances needs nothing extra, but one that must never be called cross-origin should be excluded from the layer.
