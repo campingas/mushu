@@ -110,6 +110,7 @@ Works best for Ghostty + Herdr users today.
 - [ ] M5: polish and a reproducible setup for other Ghostty + Herdr users
 
 See:
+- [AGENTS.md](AGENTS.md) for the rules and invariants to follow when changing this repo
 - [docs/development.md](docs/development.md) for building, running locally, and extending mushu
 - [docs/mushuctl.md](docs/mushuctl.md) for service installation and lifecycle control
 - [docs/plan.md](docs/plan.md) for milestones and acceptance criteria
