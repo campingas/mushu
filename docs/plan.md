@@ -23,7 +23,7 @@ Goal: from Safari on the iPhone, on any network, open the same live Herdr sessio
 Steps:
 
 1. Scaffold the Rust workspace: `server/` crate (axum + tokio + portable-pty) and `web/` front end (vanilla TS + xterm.js, embedded in the binary).
-2. Terminal endpoint: WebSocket that spawns `herdr session attach` in a pty; client handles resize, reconnect with backoff, and touch keyboard basics (Ctrl, Esc, Tab, arrows toolbar).
+2. Terminal endpoint: WebSocket that spawns `herdr session attach` in a pty; client handles resize, reconnect with backoff, and compact touch keyboard controls.
 3. Bind strictly to the host's Tailscale address; token auth on all endpoints.
 4. Configure Tailscale Serve: port 443 where it is free, and a distinct port (for example 8443) on any host whose 443 already serves something else.
 5. Run on each host as a user service (launchd on macOS, systemd on Linux).
@@ -38,6 +38,8 @@ Acceptance criteria:
 Gate: passed 2026-07-30, validated from the phone on wifi, 4G, and 5G.
 
 Post-gate correction (2026-07-31): the fixed client frame now follows the iOS visual viewport while the keyboard is open, refits the terminal and remote PTY, and keeps the active terminal prompt visible as the keyboard slides in. The owner validated the correction in the installed iPhone PWA; this does not change the passed M2 gate.
+
+Post-gate correction (2026-08-01): the mobile toolbar now fits six controls without horizontal scrolling, terminal taps toggle keyboard focus without treating a scroll as a tap, touch drags bridge to Herdr's mouse-wheel scrollback when mouse tracking is active, quick keys preserve the prior keyboard state, and compose supports multiline type, paste, and dictation. Safari's native iOS accessory bar is browser-owned and cannot be removed by the PWA. Installed-PWA behavior remains owner-validation only.
 
 ## M3: PWA install, agent inbox, and Web Push (done)
 

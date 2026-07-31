@@ -217,7 +217,6 @@
     document.getElementById('hostname').textContent = shortHost(url);
     connect();
     refreshAgents();
-    term.focus();
   }
 
   function send(data) {
@@ -298,10 +297,6 @@
   const keys = {
     esc: '\x1b',
     tab: '\t',
-    up: '\x1b[A',
-    down: '\x1b[B',
-    left: '\x1b[D',
-    right: '\x1b[C',
     'ctrl-c': '\x03',
   };
 
@@ -310,15 +305,71 @@
     document.getElementById('ctrl').classList.toggle('on', ctrlOn);
   }
 
-  document.getElementById('toolbar').addEventListener('click', (ev) => {
+  const terminalElement = document.getElementById('term');
+  let terminalTap = null;
+
+  terminalElement.addEventListener('pointerdown', (ev) => {
+    terminalTap = {
+      id: ev.pointerId,
+      pointerType: ev.pointerType,
+      x: ev.clientX,
+      y: ev.clientY,
+      lastY: ev.clientY,
+      wasFocused: document.activeElement === term.textarea,
+      moved: false,
+    };
+  });
+  terminalElement.addEventListener('pointermove', (ev) => {
+    if (!terminalTap || terminalTap.id !== ev.pointerId) return;
+    if (Math.hypot(ev.clientX - terminalTap.x, ev.clientY - terminalTap.y) > 8) {
+      terminalTap.moved = true;
+    }
+    const deltaY = terminalTap.lastY - ev.clientY;
+    terminalTap.lastY = ev.clientY;
+    if (
+      terminalTap.moved &&
+      terminalTap.pointerType === 'touch' &&
+      term.modes.mouseTrackingMode !== 'none' &&
+      deltaY !== 0
+    ) {
+      ev.preventDefault();
+      term.element.dispatchEvent(new WheelEvent('wheel', {
+        deltaY,
+        deltaMode: WheelEvent.DOM_DELTA_PIXEL,
+        clientX: ev.clientX,
+        clientY: ev.clientY,
+        bubbles: true,
+        cancelable: true,
+      }));
+    }
+  });
+  terminalElement.addEventListener('pointerup', (ev) => {
+    if (!terminalTap || terminalTap.id !== ev.pointerId) return;
+    const tap = terminalTap;
+    terminalTap = null;
+    if (tap.moved) return;
+    tap.wasFocused ? term.blur() : term.focus();
+  });
+  terminalElement.addEventListener('pointercancel', () => {
+    terminalTap = null;
+  });
+
+  const toolbar = document.getElementById('toolbar');
+  let toolbarKeyboardWasOpen = false;
+  toolbar.addEventListener('pointerdown', () => {
+    toolbarKeyboardWasOpen = document.activeElement === term.textarea;
+  });
+  toolbar.addEventListener('click', (ev) => {
     const btn = ev.target.closest('button');
-    if (!btn) return;
-    if (btn.id === 'ctrl') return toggleCtrl();
-    if (btn.id === 'kbd') return term.focus();
+    if (!btn || btn.disabled) return;
     if (btn.id === 'mic') return openVoiceBar();
-    const seq = keys[btn.dataset.key];
-    if (seq) send(seq);
-    term.focus();
+    if (btn.id === 'ctrl') {
+      toggleCtrl();
+    } else {
+      const seq = keys[btn.dataset.key];
+      if (seq) send(seq);
+    }
+    toolbarKeyboardWasOpen ? term.focus() : term.blur();
   });
 
   // --- voice / compose bar (on-device dictation via the iOS keyboard mic) ---
@@ -349,7 +400,6 @@
 
   function closeVoiceBar() {
     voicebar.classList.add('hidden');
-    term.focus();
   }
 
   document.getElementById('voice-targets').addEventListener('click', (ev) => {
@@ -364,7 +414,8 @@
     const text = voiceInput.value;
     if (!text.trim()) return;
     if (voiceTarget === 'terminal') {
-      send(withEnter ? text + '\r' : text);
+      term.paste(text);
+      if (withEnter) send('\r');
       voiceInput.value = '';
       closeVoiceBar();
       return;
@@ -391,10 +442,22 @@
   document.getElementById('voice-send').addEventListener('click', () => voiceSend(false));
   document.getElementById('voice-send-enter').addEventListener('click', () => voiceSend(true));
   document.getElementById('voice-close').addEventListener('click', closeVoiceBar);
-  voiceInput.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Enter') {
-      ev.preventDefault();
-      voiceSend(voiceTarget === 'terminal');
+
+  document.getElementById('voice-paste').addEventListener('click', async () => {
+    if (!navigator.clipboard?.readText) {
+      setStatus('clipboard unavailable; press and hold in the field to paste', false);
+      voiceInput.focus();
+      return;
+    }
+    try {
+      const text = await navigator.clipboard.readText();
+      const start = voiceInput.selectionStart;
+      const end = voiceInput.selectionEnd;
+      voiceInput.setRangeText(text, start, end, 'end');
+      voiceInput.focus();
+    } catch (_) {
+      setStatus('clipboard access failed; press and hold in the field to paste', false);
+      voiceInput.focus();
     }
   });
 
@@ -646,7 +709,6 @@
 
   document.getElementById('sheet-close').addEventListener('click', () => {
     sheet.classList.add('hidden');
-    term.focus();
   });
 
   async function postAction(action, text) {
@@ -829,7 +891,6 @@
   });
   document.getElementById('settings-close').addEventListener('click', () => {
     settings.classList.add('hidden');
-    term.focus();
   });
   document.getElementById('inst-add').addEventListener('click', addInstance);
   document.getElementById('instance-list').addEventListener('click', (ev) => {
@@ -910,5 +971,4 @@
   });
 
   connect();
-  term.focus();
 })();
