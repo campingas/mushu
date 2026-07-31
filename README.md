@@ -1,5 +1,5 @@
 <div align="center">
-<img src="docs/mushu.png" alt="Mushu" width="480" />
+<img src="web/icon-512.png" alt="Mushu" width="180" />
 <h1>Mushu</h1>
 <p><b>Leave your desk, not your agents.</b></p>
 </div>
