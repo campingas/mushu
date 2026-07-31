@@ -246,10 +246,29 @@
     sendResize();
   });
   resizeObserver.observe(document.getElementById('term'));
-  window.visualViewport?.addEventListener('resize', () => {
+
+  let lastVisualViewportHeight = window.visualViewport?.height || window.innerHeight;
+
+  function syncViewport(followTerminalOnShrink = false) {
+    const viewport = window.visualViewport;
+    const height = viewport?.height || window.innerHeight;
+    const offsetTop = viewport?.offsetTop || 0;
+    // A shrinking visual viewport with xterm focused is the keyboard sliding in.
+    const followTerminal =
+      followTerminalOnShrink &&
+      height < lastVisualViewportHeight &&
+      document.activeElement === term.textarea;
+    lastVisualViewportHeight = height;
+    document.documentElement.style.setProperty('--viewport-height', height + 'px');
+    document.documentElement.style.setProperty('--viewport-top', offsetTop + 'px');
     fit.fit();
+    if (followTerminal) term.scrollToBottom();
     sendResize();
-  });
+  }
+  syncViewport();
+  window.visualViewport?.addEventListener('resize', () => syncViewport(true));
+  window.visualViewport?.addEventListener('scroll', () => syncViewport(true));
+  if (!window.visualViewport) window.addEventListener('resize', () => syncViewport());
 
   // iOS standalone loses env(safe-area-inset-*) after the in-app browser
   // overlay used for host switches, collapsing the header under the status
@@ -269,8 +288,7 @@
   function restoreViewport() {
     pinSafeArea();
     window.scrollTo(0, 0);
-    fit.fit();
-    sendResize();
+    syncViewport();
   }
   window.addEventListener('pageshow', restoreViewport);
   document.addEventListener('visibilitychange', () => {
