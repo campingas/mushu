@@ -24,9 +24,9 @@ Alternatives rejected: TypeScript + Bun (faster iteration but heavier runtime fo
 
 ## D4: mosh alongside SSH as fallback, not the primary phone path
 
-Decision: SSH remains the default host-to-host transport; mosh (GPLv3, installed and verified on both hosts) is the raw-terminal fallback into robrog. The phone's primary path is the PWA over Tailscale.
+Decision: SSH remains the default host-to-host transport; mosh (GPLv3) is the raw-terminal fallback into any host that runs sshd. The phone's primary path is the PWA over Tailscale.
 
-Why: mosh solved roaming for a raw terminal, but the PWA gets equivalent resilience from aggressive WebSocket reconnect plus Herdr owning all session state. The Mac keeps Remote Login (sshd) off entirely, so mosh/SSH to the Mac is intentionally impossible.
+Why: mosh solved roaming for a raw terminal, but the PWA gets equivalent resilience from aggressive WebSocket reconnect plus Herdr owning all session state. A host that keeps Remote Login (sshd) off has no mosh or SSH path at all, by design.
 
 ## D5: Herdr socket API as the source of truth for agent state
 
@@ -50,11 +50,11 @@ Why: no extra app, no third-party relay, payloads E2E encrypted per RFC 8291 so 
 
 Fallback: self-hosted ntfy (D2) can be revived as a secondary channel if iOS Web Push delivery proves unreliable.
 
-## D8: Mac included via mushu-server, Remote Login stays off
+## D8: macOS hosts included via mushu-server, Remote Login stays off
 
-Decision: the MacBook runs mushu-server bound to its Tailscale address, making its Herdr sessions reachable from the phone without enabling Remote Login/sshd. robrog additionally keeps SSH and mosh as fallback paths.
+Decision: a macOS host runs mushu-server bound to its Tailscale address, making its Herdr sessions reachable from the phone without enabling Remote Login/sshd. Hosts that do run sshd keep SSH and mosh as additional fallback paths.
 
-Why: the Mac is where Ghostty + Herdr agents primarily run, and the owner explicitly refuses sshd exposure on it. A tailnet-bound web server satisfies both.
+Why: a workstation is often where Ghostty + Herdr agents primarily run, while being the machine an owner is least willing to expose over sshd. A tailnet-bound web server satisfies both.
 
 ## D9: One installed app drives every host from a single origin
 

@@ -11,7 +11,7 @@ iPhone / iPad (Safari PWA on home screen)
    |  Tailscale (any network: LAN, 4G, foreign wifi)
    |  https://<host>.<tailnet>.ts.net (Tailscale Serve, valid certs, tailnet-only)
    |
-   |-- WebSocket --> mushu-server (Rust daemon, one per host: MacBook, robrog)
+   |-- WebSocket --> mushu-server (Rust daemon, one per host)
    |                   - serves the PWA assets
    |                   - web terminal: pty attach to Herdr sessions, streamed over WebSocket
    |                   - agent inbox: state from the Herdr socket API
@@ -46,7 +46,7 @@ Herdr runs as a persistent server with attachable clients, so the phone and desk
 
 Tailscale provides reachability from any network, MagicDNS, and encryption; verified from the iPhone over 4G. Tailscale Serve provides valid HTTPS certs (`<host>.<tailnet>.ts.net`), required for service workers and Web Push, while staying tailnet-only (no Funnel).
 
-Constraint on robrog: Tailscale Serve already proxies Immich on 443. mushu-server must use a distinct serve port (for example `https://robrog.<tailnet>.ts.net:8443`) so the Immich mapping is untouched.
+Constraint when a host already publishes something else: if Tailscale Serve is already mapping port 443 on that host, mushu-server must use a distinct serve port (for example `https://<host>.<tailnet>.ts.net:8443`) so the existing mapping is untouched.
 
 ### Notifications: iOS Web Push
 
@@ -60,12 +60,12 @@ Single-origin client: one installed PWA connects to every saved instance from th
 
 ### Fallback transport: mosh (installed, optional)
 
-mosh 1.4.0 is installed on both hosts and verified Mac to robrog over the tailnet. It remains the raw-terminal fallback into robrog from any mosh-capable client if the web path is ever down. The Mac deliberately has Remote Login (sshd) off; it is reachable only through mushu-server on its tailnet address.
+mosh is installed on both reference hosts and verified host to host over the tailnet. It remains the raw-terminal fallback into any host that runs sshd, from any mosh-capable client, if the web path is ever down. A host may deliberately keep Remote Login (sshd) off, in which case mushu-server on its tailnet address is its only remote path.
 
 ## Security model
 
 - mushu-server binds only to the host's Tailscale address; nothing on LAN or WAN. Tailscale Grants stay least-privilege (self-owned devices only).
-- No sshd on the Mac; the phone's only path into the Mac is mushu-server.
+- A host can run no sshd at all; the phone's only path into it is then mushu-server.
 - Action endpoints authenticate (token at minimum) even though tailnet-only, because they execute keystrokes into live agent sessions; approvals expire and are audit-logged.
 - Web Push payloads are E2E encrypted; no terminal content in notification payloads regardless.
 - No credentials in this repo; the PWA holds its push subscription plus saved instance URLs and their access tokens on the phone. With the optional Face ID lock enabled, the tokens are AES-GCM encrypted at rest under a WebAuthn passkey PRF secret (Secure Enclave-backed, released only after Face ID / Touch ID); otherwise they live in plain localStorage.

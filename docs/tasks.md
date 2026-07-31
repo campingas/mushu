@@ -13,23 +13,23 @@ Revised 2026-07-30 for the PWA pivot (decisions D6-D8). Dropped tasks from the B
 
 ## M1: Transport baseline (done, scope revised)
 
-- [x] Install mosh on the macOS host (brew): mosh 1.4.0_40.
-- [x] Install mosh on the Linux host (apt): mosh 1.4.0 on robrog, ufw inactive, exposure governed by router NAT and Tailscale Grants.
-- [x] Verify mosh host-to-host over tailnet: Mac to robrog session established via MagicDNS, UDP verified on tailnet and LAN paths.
-- [x] Wake robrog via WoL magic packet; restore Tailscale on the Mac (`--accept-routes` preserved).
+- [x] Install mosh on the macOS host (brew).
+- [x] Install mosh on the Linux host (apt); exposure governed by the local firewall, router NAT, and Tailscale Grants.
+- [x] Verify mosh host to host over the tailnet: session established via MagicDNS, UDP verified on tailnet and LAN paths.
+- [x] Wake a sleeping host via WoL magic packet; restore Tailscale afterwards (`--accept-routes` preserved).
 - [x] Gate: pivot decision closes M1; phone-side verification moves to M2.
 
 ## M2: mushu-server MVP with web terminal
 
 - [x] Scaffold Rust workspace: `server/` (axum, tokio, portable-pty) + `web/` (vendored xterm.js, embedded via rust-embed).
-- [x] WebSocket terminal endpoint spawning the attach command in a pty (`herdr` on the Mac, `tmux new-session -A -s rob` on robrog since Herdr is not installed there yet; HERDR* env stripped from the child to avoid nested-attach refusal).
+- [x] WebSocket terminal endpoint spawning the attach command in a pty (`herdr` by default, or a fallback such as `tmux new-session -A -s main` on a host without Herdr; HERDR* env stripped from the child to avoid nested-attach refusal).
 - [x] Client: resize, reconnect with backoff, touch toolbar (Ctrl, Esc, Tab, arrows, ^C).
 - [x] Bind hardened beyond plan: 127.0.0.1 only, published solely through Tailscale Serve; token auth (min 16 chars, constant-time compare).
-- [x] Tailscale Serve: Mac on 443, robrog on 8443, Immich verified untouched on 443.
-- [x] Service files: launchd `dev.mushu.server` (Mac), systemd user unit with linger (robrog); tokens in `~/.config/mushu-token` (600).
+- [x] Tailscale Serve: 443 where free, 8443 on a host whose 443 is taken; the pre-existing mapping verified untouched.
+- [x] Service files: launchd `dev.mushu.server` (macOS), systemd user unit with linger (Linux); tokens in `~/.config/mushu-token` (600).
 - [x] Verify from iPhone Safari: same session as desktop, works on wifi, 4G, and 5G with reconnect (user confirmed 2026-07-30).
-- [x] Verify Immich unaffected and server unreachable from LAN (loopback bind); wss round-trip to robrog tmux verified end to end.
-- [x] Install Herdr on robrog and switch its MUSHU_CMD from tmux to herdr (herdr 0.7.5 in `~/.local/bin`, 2026-07-31).
+- [x] Verify co-hosted services unaffected and the server unreachable from LAN (loopback bind); wss round-trip verified end to end.
+- [x] Install Herdr on a host that lacked it and switch its MUSHU_CMD from tmux to herdr (2026-07-31).
 - [x] Gate: user validates the phone terminal (2026-07-30).
 
 ## M3: PWA, inbox, Web Push
@@ -67,4 +67,4 @@ Multi-host UX landed early on 2026-07-31: settings panel storing per-host URL an
 
 - Blink Shell install, key setup, phone mosh testing (D1 superseded).
 - Self-hosted ntfy deployment and APNs upstream (D2 superseded, kept as possible fallback).
-- Enabling Remote Login on the Mac (explicitly refused; D8).
+- Enabling Remote Login on a macOS host (explicitly out of scope; D8).
