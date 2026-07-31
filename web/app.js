@@ -103,6 +103,21 @@
     }
   }
 
+  // `mushuctl pair` encodes the token in the QR's URL fragment. Fragments are
+  // never sent to the server, and keeping it in the URL while running in Safari
+  // means "Add to Home Screen" captures it, so the installed app is signed in
+  // even though iOS gives it a storage jar separate from Safari's.
+  const pairedToken = (() => {
+    const raw = decodeURIComponent(location.hash.replace(/^#/, '')).trim();
+    return raw.length >= 16 ? raw : null;
+  })();
+
+  function consumePairFragment() {
+    if (pairedToken && window.navigator.standalone) {
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+  }
+
   let vault = null;
   try {
     vault = JSON.parse(localStorage.getItem('mushu_vault'));
@@ -110,19 +125,29 @@
   if (vault) {
     instances = await unlockVault(vault);
   } else {
-    token = localStorage.getItem('mushu_token');
+    token = pairedToken || localStorage.getItem('mushu_token');
     if (!token) {
       token = prompt('mushu access token');
-      if (token) localStorage.setItem('mushu_token', token);
     }
+    if (token) localStorage.setItem('mushu_token', token);
     instances = loadInstances();
   }
+  consumePairFragment();
 
   const saveInstances = () => {
     if (vaultKey) return void persistVault().catch(() => setStatus('vault write failed', false));
     localStorage.setItem('mushu_instances', JSON.stringify(instances));
   };
   const shortHost = (url) => new URL(url).hostname.split('.')[0];
+
+  // Re-pairing this host while the vault holds the tokens.
+  if (vaultKey && pairedToken) {
+    const home = instances.find((i) => i.url === location.origin);
+    if (home && home.token !== pairedToken) {
+      home.token = pairedToken;
+      saveInstances();
+    }
+  }
 
   let active =
     instances.find((i) => i.url === localStorage.getItem('mushu_active')) ||

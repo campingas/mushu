@@ -29,7 +29,7 @@ Revised 2026-07-30 for the PWA pivot (decisions D6-D8). Dropped tasks from the B
 - [x] Service files: launchd `dev.mushu.server` (Mac), systemd user unit with linger (robrog); tokens in `~/.config/mushu-token` (600).
 - [x] Verify from iPhone Safari: same session as desktop, works on wifi, 4G, and 5G with reconnect (user confirmed 2026-07-30).
 - [x] Verify Immich unaffected and server unreachable from LAN (loopback bind); wss round-trip to robrog tmux verified end to end.
-- [ ] Install Herdr on robrog and switch its MUSHU_CMD from tmux to herdr.
+- [x] Install Herdr on robrog and switch its MUSHU_CMD from tmux to herdr (herdr 0.7.5 in `~/.local/bin`, 2026-07-31).
 - [x] Gate: user validates the phone terminal (2026-07-30).
 
 ## M3: PWA, inbox, Web Push
@@ -53,8 +53,13 @@ Revised 2026-07-30 for the PWA pivot (decisions D6-D8). Dropped tasks from the B
 
 ## M5: Polish and shareability
 
-- [ ] Single binary release and setup docs/script.
-- [ ] Inbox grouping, priorities, quiet hours, multi-host UX.
+Multi-host UX landed early on 2026-07-31: settings panel storing per-host URL and token, per-host alert toggles, drawer host switching from a single origin (D9), optional Face ID lock on stored tokens (D10).
+
+- [x] `mushuctl pair`: QR sign-in with the token in the URL fragment (D11); public URL auto-discovered from the Tailscale Serve mapping that proxies our bind address.
+- [x] Static assets served with `Cache-Control: no-cache`, so an upgraded server is not shadowed by a browser-cached bundle.
+- [x] Docs truth-up: README pairing and multi-host sections including the shared VAPID keypair requirement; decisions D9-D11.
+- [ ] Prebuilt release binaries per platform plus CI running `cargo test`.
+- [ ] Quiet hours in the notifier loop.
 - [ ] Limitations doc versus commercial alternatives and t3code.
 - [ ] Gate: user validates and decides next direction.
 

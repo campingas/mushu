@@ -54,6 +54,8 @@ Sent by mushu-server directly through Apple's push service using VAPID. Payloads
 
 Multi-instance alerts: all hosts share one VAPID keypair (`~/.config/mushu/vapid.key` copied between hosts), so the PWA's single push subscription can be delivered to by any instance. The settings page stores instance URLs and tokens, and toggling alerts for an instance adds or removes this subscription in that instance's server-side store via `/push/subscribe`, `/push/unsubscribe`, and `/push/status` (all token-authed, CORS-enabled for cross-instance calls).
 
+Pairing: `mushuctl pair` prints a QR code for `https://<host>/#<token>`, resolving the public URL from the Tailscale Serve mapping whose proxy target matches `MUSHU_BIND` (or `MUSHU_URL` when set). The token stays in the fragment, which is never sent to the server and survives into the home screen bookmark, so the installed app is signed in without typing.
+
 Single-origin client: one installed PWA connects to every saved instance from the origin it was installed from. Switching hosts swaps the WebSocket and API base URL plus token in place (cross-origin WebSocket and the CORS-enabled API); the page never navigates to another origin, so the iOS in-app browser overlay and its viewport bugs no longer occur.
 
 ### Fallback transport: mosh (installed, optional)

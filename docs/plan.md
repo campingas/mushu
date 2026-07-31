@@ -77,11 +77,14 @@ Gate: passed 2026-07-30, approval round-trip validated on 4G.
 
 Goal: any Ghostty + Herdr user can reproduce this stack from the repo.
 
+Multi-host UX shipped ahead of this milestone on 2026-07-31 (D9-D10): one installed app drives every host from a single origin, with per-host alert toggles and an optional Face ID lock on stored tokens. Inbox grouping and priorities are deferred; with a handful of agents the existing chips are not the constraint.
+
 Steps:
 
-1. Install story: single binary release, setup script or step-by-step doc covering hosts, tailnet, Serve, PWA install, and service files.
-2. Inbox refinement: grouping, priorities, quiet hours, multi-host UX.
-3. Honest limitations doc versus commercial alternatives (voice input, image paste, Live Activities out of scope without a native app) and versus t3code.
+1. Pairing and honest docs (done 2026-07-31): `mushuctl pair` prints a QR that signs a phone in without typing a token (D11), and the docs now match the shipped app, including the shared VAPID keypair that multi-host alerts require.
+2. Release story: prebuilt binaries per platform and CI running `cargo test`, so the stack no longer requires a Rust toolchain to install.
+3. Quiet hours: a time window in the notifier loop, so a finished agent does not wake you at 3am.
+4. Honest limitations doc versus commercial alternatives (image paste, Live Activities out of scope without a native app) and versus t3code.
 
 Acceptance criteria:
 
