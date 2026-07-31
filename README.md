@@ -46,16 +46,13 @@ On the phone: open `https://<host>.<tailnet>.ts.net` in Safari, enter the token,
 
 ## Test Renders
 
-**An agent hits a permission prompt while you're away:** lock screen ping, tap, approve, it keeps working.
+| Permission prompt | Check and steer agents |
+|---|---|
+| ![Agent approval prompt](output/playwright/mushu-mobile-demo/mushu-agent-accept.png) | ![Workspaces and agent inbox](output/playwright/mushu-mobile-demo/mushu-workspaces-tabs.png) |
 
-<img src="output/playwright/mushu-mobile-demo/mushu-agent-accept.png" alt="Agent approval prompt on mobile" width="240" />
+### Video demo
 
-**On the go, check what your agents did and steer them** in the same session you left at your desk.
-
-<img src="output/playwright/mushu-mobile-demo/mushu-workspaces-tabs.png" alt="Workspaces and agent inbox on mobile" width="240" />
-
-
-![Watch the video](https://raw.githubusercontent.com/campingas/mushu/refs/heads/main/output/playwright/mushu-mobile-demo/mush-mobile-demo-screen.png)](https://raw.githubusercontent.com/campingas/mushu/refs/heads/main/output/playwright/mushu-mobile-demo/mushu-mobile-demo.mp4)
+[▶ Play the mobile demo](output/playwright/mushu-mobile-demo/mushu-mobile-demo.mp4)
 
 ## Status
 
