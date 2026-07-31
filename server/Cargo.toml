@@ -28,9 +28,10 @@ qrcode = { version = "0.14", default-features = false }
 openssl = { version = "0.10", optional = true }
 
 [features]
-# Build OpenSSL from source and link it statically. Used for the released Linux
-# musl binaries so they run without a system libssl; local builds keep using the
-# platform's own TLS (Security.framework on macOS, system OpenSSL on Linux).
+# Build OpenSSL from source and link it statically. Used for every released
+# binary: web-push reaches OpenSSL through ece on all platforms, so a default
+# macOS build links an absolute Homebrew dylib path and a default Linux build
+# needs a matching system libssl. Local builds keep using the system library.
 vendored-tls = ["dep:openssl", "openssl/vendored"]
 
 [[bin]]
