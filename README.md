@@ -65,7 +65,7 @@ Run `mushuctl pair` on the host. It prints a QR code for the tailnet URL with th
 mushuctl pair
   █▀▀▀▀▀█ ▄▄ ▀▀▄▄██▀▀██ █▀▀▀▀▀█
   █ ███ █ █▀ ███ ▀▀▀▀ ▄ █ ███ █     url:   https://your-host.tailnet.ts.net
-  █ ▀▀▀ █ ██▀▄▄ ▀█ █▀▀  █ ▀▀▀ █     token: 0a25b44cd8feba0a…
+  █ ▀▀▀ █ ██▀▄▄ ▀█ █▀▀  █ ▀▀▀ █     token: 0123456789abcdef…
   ▀▀▀▀▀▀▀ █▄▀▄▀ ▀▄▀ ▀ █▄▀▀▀▀▀▀▀
 ```
 
@@ -93,7 +93,7 @@ Skip this and the second host's alerts will silently never arrive. Re-enable its
 
 Optionally tap **enable face id lock**: your host tokens are then encrypted at rest with AES-GCM under a passkey held in the Secure Enclave, and opening the app asks for Face ID.
 
-## Test Renders
+## Screenshots
 
 | Permission prompt | Check and steer agents |
 |---|---|
@@ -110,6 +110,7 @@ Works best for Ghostty + Herdr users today.
 - [ ] M5: polish and a reproducible setup for other Ghostty + Herdr users
 
 See:
+- [docs/development.md](docs/development.md) for building, running locally, and extending mushu
 - [docs/mushuctl.md](docs/mushuctl.md) for service installation and lifecycle control
 - [docs/plan.md](docs/plan.md) for milestones and acceptance criteria
 - [docs/tasks.md](docs/tasks.md) for the checklist

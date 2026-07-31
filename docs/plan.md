@@ -10,9 +10,9 @@ README and docs created, initial branch renamed to `main`. Docs revised for the 
 
 ## M1: Transport baseline (done, scope revised)
 
-Completed: mosh 1.4.0 installed on the Mac (brew) and robrog (apt); mosh session verified Mac to robrog over the tailnet via MagicDNS; UDP paths verified; Tailscale restored on the Mac. robrog woken by Wake-on-LAN.
+Completed: mosh installed on both reference hosts (brew on macOS, apt on Linux); a mosh session verified host to host over the tailnet via MagicDNS; UDP paths verified; a sleeping host woken by Wake-on-LAN.
 
-Scope change: the phone terminal is now the PWA, so Blink Shell setup and phone mosh testing are dropped. mosh remains the raw-terminal fallback into robrog. The Mac keeps Remote Login off by explicit owner decision.
+Scope change: the phone terminal is now the PWA, so Blink Shell setup and phone mosh testing are dropped. mosh remains the raw-terminal fallback into hosts that run sshd. A host may keep Remote Login off entirely, by owner decision.
 
 Gate: passed implicitly by the pivot decision; remaining phone verification moves to M2.
 
@@ -25,14 +25,14 @@ Steps:
 1. Scaffold the Rust workspace: `server/` crate (axum + tokio + portable-pty) and `web/` front end (vanilla TS + xterm.js, embedded in the binary).
 2. Terminal endpoint: WebSocket that spawns `herdr session attach` in a pty; client handles resize, reconnect with backoff, and touch keyboard basics (Ctrl, Esc, Tab, arrows toolbar).
 3. Bind strictly to the host's Tailscale address; token auth on all endpoints.
-4. Configure Tailscale Serve: Mac on 443, robrog on a distinct port (8443) to leave the existing Immich mapping on 443 untouched.
-5. Run on both hosts (launchd on macOS, systemd on robrog).
+4. Configure Tailscale Serve: port 443 where it is free, and a distinct port (for example 8443) on any host whose 443 already serves something else.
+5. Run on each host as a user service (launchd on macOS, systemd on Linux).
 
 Acceptance criteria:
 
 - iPhone Safari opens `https://<host>.<tailnet>.ts.net[:port]`, attaches, and shows the same Herdr session as desktop Ghostty (action on one visible on the other).
 - Works on home wifi and on 4G; a wifi-to-4G switch recovers the session within seconds via reconnect, with no lost Herdr state.
-- Immich on robrog remains reachable at its existing URL.
+- Any service already published on a host remains reachable at its existing URL.
 - Server unreachable from LAN and WAN addresses (tailnet bind verified).
 
 Gate: passed 2026-07-30, validated from the phone on wifi, 4G, and 5G.
