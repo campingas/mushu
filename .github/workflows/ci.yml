@@ -1,8 +1,9 @@
 name: CI
 
+# Every branch, since this project merges locally rather than through pull
+# requests; a feature branch still gets checked before it reaches main.
 on:
   push:
-    branches: [main]
   pull_request:
     branches: [main]
 
