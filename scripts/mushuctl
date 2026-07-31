@@ -17,6 +17,7 @@ Commands:
   restart            Restart the Mushu user service
   status             Report Mushu service state without printing its environment
   logs               Follow Mushu service logs
+  pair               Show a QR code that signs a phone in to this host
   with-herdr [args]  Run herdr in the foreground with Mushu available
   help               Show this help
 EOF
@@ -135,6 +136,25 @@ follow_logs() {
   esac
 }
 
+pair_device() {
+  local server
+  # Prefer a mushu-server sitting next to this script: mushuctl is often run
+  # from a login shell whose PATH does not include the install directory.
+  server="$(command -v mushu-server || true)"
+  if [[ -z "$server" ]]; then
+    local here
+    here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+    if [[ -x "$here/mushu-server" ]]; then
+      server="$here/mushu-server"
+    else
+      printf 'mushuctl: mushu-server not found in PATH or %s\n' "$here" >&2
+      return 1
+    fi
+  fi
+  MUSHU_TOKEN_FILE="${MUSHU_TOKEN_FILE:-$HOME/.config/mushu-token}" \
+    exec "$server" pair
+}
+
 with_herdr() {
   local started_mushu=0
   local herdr_status=0
@@ -188,6 +208,10 @@ case "$command" in
   logs)
     (($# == 0)) || { usage >&2; exit 2; }
     follow_logs
+    ;;
+  pair)
+    (($# == 0)) || { usage >&2; exit 2; }
+    pair_device
     ;;
   with-herdr) with_herdr "$@" ;;
   help|-h|--help)

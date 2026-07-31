@@ -13,6 +13,8 @@
 - Agent inbox: live status chips for every agent (working, blocked, done, idle).
 - Push notifications when an agent needs input or finishes, end-to-end encrypted.
 - One-tap approve/deny, quick keys, or a full prompt, stale-guarded and audit-logged.
+- All your machines in one app: switch hosts from the drawer, alerts on or off per host.
+- Sign in by scanning a QR code; optionally lock your tokens behind Face ID.
 - Private by construction: loopback bind, published tailnet-only via Tailscale Serve. No sshd, no app store, no third-party relay.
 
 ## Install
@@ -40,10 +42,45 @@ Configuration is all environment variables:
 | `MUSHU_BIND` | `127.0.0.1:8422` | listen address |
 | `MUSHU_CMD` | `herdr` | command attached to the web terminal (e.g. `tmux new-session -A -s main`) |
 | `MUSHU_HOST` | hostname | label shown in the inbox and notifications |
+| `MUSHU_URL` | Tailscale Serve mapping | public URL used by `mushuctl pair`, when auto-discovery cannot find it |
 
-For boot persistence or on-demand lifecycle control, install the repo-owned launchd or systemd user service and use [`mushuctl`](docs/mushuctl.md). It provides `start`, `stop`, `restart`, sanitized `status`, `logs`, and `with-herdr`; keep the token file mode at `600`.
+For boot persistence or on-demand lifecycle control, install the repo-owned launchd or systemd user service and use [`mushuctl`](docs/mushuctl.md). It provides `start`, `stop`, `restart`, sanitized `status`, `logs`, `pair`, and `with-herdr`; keep the token file mode at `600`.
 
-On the phone: open `https://<host>.<tailnet>.ts.net` in Safari, enter the token, Share, Add to Home Screen, open the app, tap the bell to enable notifications (iOS 16.4+).
+## Pair your phone
+
+Run `mushuctl pair` on the host. It prints a QR code for the tailnet URL with the token in the URL fragment, discovering the URL from your Tailscale Serve mapping (override with `MUSHU_URL`):
+
+```
+mushuctl pair
+  █▀▀▀▀▀█ ▄▄ ▀▀▄▄██▀▀██ █▀▀▀▀▀█
+  █ ███ █ █▀ ███ ▀▀▀▀ ▄ █ ███ █     url:   https://your-host.tailnet.ts.net
+  █ ▀▀▀ █ ██▀▄▄ ▀█ █▀▀  █ ▀▀▀ █     token: 0a25b44cd8feba0a…
+  ▀▀▀▀▀▀▀ █▄▀▄▀ ▀▄▀ ▀ █▄▀▀▀▀▀▀▀
+```
+
+1. Scan it with the iPhone camera.
+2. On that page: Share, then **Add to Home Screen**.
+3. Open mushu from the home screen. It is already signed in.
+
+Add to Home Screen while the fragment is still in the URL: iOS gives an installed web app a storage jar separate from Safari's, and the token travels in the bookmark. Fragments are never sent to a server, so the token never reaches a log or proxy trace.
+
+Then open the cog and turn on alerts to enable push notifications (iOS 16.4+, requires the home screen install).
+
+## More than one host
+
+Run mushu-server on each host, then add the others from the cog panel: paste the second host's URL and its token (`mushuctl pair` prints both). Saved hosts appear under **hosts** in the drawer, and tapping one switches the terminal and inbox to it without leaving the app. Each host has its own alerts on/off toggle.
+
+Push notifications from a second host need one extra step, because a browser holds a single push subscription tied to one VAPID key. Give every host the same keypair:
+
+```sh
+scp ~/.config/mushu/vapid.key otherhost:~/.config/mushu/vapid.key
+ssh otherhost 'rm -f ~/.config/mushu/subscriptions.json'   # old subs used the retired key
+ssh otherhost 'systemctl --user restart mushu.service'
+```
+
+Skip this and the second host's alerts will silently never arrive. Re-enable its alerts from the cog panel afterwards.
+
+Optionally tap **enable face id lock**: your host tokens are then encrypted at rest with AES-GCM under a passkey held in the Secure Enclave, and opening the app asks for Face ID.
 
 ## Test Renders
 

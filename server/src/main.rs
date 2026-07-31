@@ -149,14 +149,96 @@ fn load_token(token_file: Option<OsString>, token: Option<String>) -> Result<Str
     Ok(token)
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    tracing_subscriber::fmt().with_target(false).init();
-
-    let bind: SocketAddr = std::env::var("MUSHU_BIND")
+fn bind_addr() -> Result<SocketAddr> {
+    std::env::var("MUSHU_BIND")
         .unwrap_or_else(|_| "127.0.0.1:8422".into())
         .parse()
-        .context("invalid MUSHU_BIND")?;
+        .context("invalid MUSHU_BIND")
+}
+
+/// Public URL this host is published at: `MUSHU_URL` if set, else the
+/// Tailscale Serve mapping whose proxy target is our own bind address. Matching
+/// on the target is what distinguishes mushu from anything else the host serves.
+fn public_url(bind: SocketAddr) -> Result<String> {
+    if let Ok(url) = std::env::var("MUSHU_URL") {
+        return Ok(url.trim_end_matches('/').to_string());
+    }
+
+    let output = std::process::Command::new("tailscale")
+        .args(["serve", "status", "--json"])
+        .output()
+        .context("failed to run `tailscale serve status --json`; set MUSHU_URL instead")?;
+    anyhow::ensure!(
+        output.status.success(),
+        "`tailscale serve status --json` failed; set MUSHU_URL instead"
+    );
+
+    let status: serde_json::Value =
+        serde_json::from_slice(&output.stdout).context("unreadable tailscale serve status")?;
+    let want = format!("http://{bind}");
+    let host_port = status
+        .get("Web")
+        .and_then(|w| w.as_object())
+        .and_then(|web| {
+            web.iter().find_map(|(host_port, entry)| {
+                let serves_us = entry
+                    .get("Handlers")
+                    .and_then(|h| h.as_object())
+                    .is_some_and(|handlers| {
+                        handlers
+                            .values()
+                            .filter_map(|h| h.get("Proxy").and_then(|p| p.as_str()))
+                            .any(|proxy| proxy.trim_end_matches('/') == want)
+                    });
+                serves_us.then(|| host_port.clone())
+            })
+        })
+        .with_context(|| {
+            format!("no Tailscale Serve mapping proxies to {want}; run `tailscale serve` first or set MUSHU_URL")
+        })?;
+
+    Ok(format!("https://{}", host_port.trim_end_matches(":443")))
+}
+
+fn pair() -> Result<()> {
+    let bind = bind_addr()?;
+    let token = load_token(
+        std::env::var_os("MUSHU_TOKEN_FILE"),
+        std::env::var("MUSHU_TOKEN").ok(),
+    )?;
+    let url = public_url(bind)?;
+    // The token rides in the fragment: never sent to the server, so it cannot
+    // reach a log or proxy trace, and it survives into the home screen bookmark
+    // that iOS opens the installed app with.
+    let payload = format!("{url}/#{token}");
+
+    let qr = qrcode::QrCode::new(payload.as_bytes()).context("failed to encode pairing QR")?;
+    println!(
+        "\n{}",
+        qr.render::<qrcode::render::unicode::Dense1x2>().build()
+    );
+    println!("  url:   {url}");
+    println!("  token: {token}\n");
+    println!("  1. Scan the code with the iPhone camera.");
+    println!("  2. On that page: Share, then Add to Home Screen.");
+    println!("  3. Open mushu from the home screen; it is already signed in.\n");
+    Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    match std::env::args().nth(1).as_deref() {
+        None => {}
+        Some("pair") => return pair(),
+        Some(other) => {
+            eprintln!("mushu-server: unknown argument: {other}\nusage: mushu-server [pair]");
+            std::process::exit(2);
+        }
+    }
+
+    tracing_subscriber::fmt().with_target(false).init();
+
+    let bind = bind_addr()?;
     let token = load_token(
         std::env::var_os("MUSHU_TOKEN_FILE"),
         std::env::var("MUSHU_TOKEN").ok(),
@@ -256,7 +338,16 @@ async fn static_asset(uri: Uri) -> Response {
     match WebAssets::get(path) {
         Some(content) => {
             let mime = mime_guess::from_path(path).first_or_octet_stream();
-            ([(header::CONTENT_TYPE, mime.as_ref())], content.data).into_response()
+            (
+                [
+                    (header::CONTENT_TYPE, mime.as_ref()),
+                    // Assets are embedded in the binary and change on upgrade,
+                    // so a heuristically cached copy would survive a deploy.
+                    (header::CACHE_CONTROL, "no-cache"),
+                ],
+                content.data,
+            )
+                .into_response()
         }
         None => (StatusCode::NOT_FOUND, "not found").into_response(),
     }

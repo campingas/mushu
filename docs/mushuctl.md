@@ -55,6 +55,7 @@ Enable linger with `loginctl enable-linger "$USER"` only if Mushu must start bef
 - `mushuctl restart` restarts Mushu.
 - `mushuctl status` reports only sanitized active state, plus launchd loaded state on macOS.
 - `mushuctl logs` follows the launchd log file or systemd journal.
+- `mushuctl pair` prints a QR code that signs a phone in to this host. It defaults `MUSHU_TOKEN_FILE` to `$HOME/.config/mushu-token` and resolves the public URL from the Tailscale Serve mapping that proxies this host's bind address; set `MUSHU_URL` when there is no such mapping. The QR carries the token in the URL fragment, and the URL and token are printed underneath as a fallback.
 - `mushuctl with-herdr [args]` starts Mushu only when inactive, runs `herdr [args]` in the foreground, and stops Mushu on exit or a trapped signal only when it started Mushu.
 - `mushuctl help` shows command help.
 

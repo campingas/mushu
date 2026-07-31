@@ -55,3 +55,27 @@ Fallback: self-hosted ntfy (D2) can be revived as a secondary channel if iOS Web
 Decision: the MacBook runs mushu-server bound to its Tailscale address, making its Herdr sessions reachable from the phone without enabling Remote Login/sshd. robrog additionally keeps SSH and mosh as fallback paths.
 
 Why: the Mac is where Ghostty + Herdr agents primarily run, and the owner explicitly refuses sshd exposure on it. A tailnet-bound web server satisfies both.
+
+## D9: One installed app drives every host from a single origin
+
+Decision: the PWA keeps running on the origin it was installed from and switches hosts by swapping the WebSocket and API base URL plus that host's token, instead of navigating to the other host's URL.
+
+Why: each host is its own HTTPS origin, and navigating between origins inside an installed iOS web app opens the in-app browser overlay, whose WKWebView leaves the layout broken often enough that the header lands under the status bar and stops accepting taps. No in-page workaround fixed it reliably. Staying on one origin removes the navigation entirely, and it costs nothing: WebSockets are exempt from CORS, and the API routes already send permissive CORS headers with token auth unchanged.
+
+Consequence: tokens for every host live in the installed app's storage (see D10), and a stale socket could reconnect to the previous host, so a connection epoch counter invalidates in-flight handlers on every switch.
+
+## D10: Host tokens encrypted under a Secure Enclave passkey
+
+Decision: offer an optional lock that encrypts all saved host tokens with AES-GCM, where the key comes from a WebAuthn passkey's PRF extension output, unlocked by Face ID or Touch ID.
+
+Why: a PWA cannot put secrets in the iOS Keychain, so tokens otherwise sit in plain localStorage. A passkey's private key does live in the Secure Enclave, and PRF turns it into a stable per-credential secret that never leaves the device, giving real at-rest protection with no server involvement and no account system.
+
+Alternatives rejected: server-side WebAuthn login replacing tokens (strongest, but needs registration, challenge, and session handling in mushu-server); a user-chosen passphrase (another secret to remember, and no biometric unlock).
+
+## D11: Pairing by QR with the token in the URL fragment
+
+Decision: `mushuctl pair` prints a QR code encoding `https://<host>/#<token>`; the app reads the fragment, stores the token, and strips it once running as an installed app.
+
+Why: typing a 48-character token into a phone is the worst step of setup. A fragment is never transmitted to the server, so unlike a query string the token cannot reach an access log or proxy trace. Keeping it in the URL during the Safari visit matters too: iOS gives an installed web app a storage jar separate from Safari's, so a token merely written to storage before "Add to Home Screen" may not survive, while one carried in the bookmark URL always does.
+
+Alternatives rejected: a short-lived one-time pairing code exchanged for the token (removes the token from the URL entirely, but needs a stateful endpoint, expiry and single-use handling, and a fresh QR whenever setup runs slow).
