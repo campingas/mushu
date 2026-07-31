@@ -37,6 +37,8 @@ Acceptance criteria:
 
 Gate: passed 2026-07-30, validated from the phone on wifi, 4G, and 5G.
 
+Post-gate correction (2026-07-31): the fixed client frame now follows the iOS visual viewport while the keyboard is open, refits the terminal and remote PTY, and keeps the active terminal prompt visible as the keyboard slides in. The owner validated the correction in the installed iPhone PWA; this does not change the passed M2 gate.
+
 ## M3: PWA install, agent inbox, and Web Push (done)
 
 Goal: mushu on the home screen, agent events as push notifications.

@@ -11,7 +11,10 @@ body {
   /* Pinned so iOS can never scroll the document; returning from the in-app
      browser overlay used to leave the header stuck under the status bar. */
   position: fixed;
-  inset: 0;
+  top: var(--viewport-top, 0px);
+  right: 0;
+  left: 0;
+  height: var(--viewport-height, 100%);
   display: flex;
   flex-direction: column;
   padding-top: var(--safe-top, env(safe-area-inset-top));

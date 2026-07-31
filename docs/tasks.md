@@ -31,6 +31,8 @@ Revised 2026-07-30 for the PWA pivot (decisions D6-D8). Dropped tasks from the B
 - [x] Verify co-hosted services unaffected and the server unreachable from LAN (loopback bind); wss round-trip verified end to end.
 - [x] Install Herdr on a host that lacked it and switch its MUSHU_CMD from tmux to herdr (2026-07-31).
 - [x] Gate: user validates the phone terminal (2026-07-30).
+- [x] Correct the keyboard-open layout so the fixed client frame follows the visual viewport, refits the terminal and remote PTY, and keeps the active prompt visible (2026-07-31).
+- [x] Owner verified the keyboard-open correction in the installed iPhone PWA (2026-07-31); this does not reopen the passed M2 gate.
 
 ## M3: PWA, inbox, Web Push
 
