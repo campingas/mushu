@@ -54,6 +54,8 @@ Sent by mushu-server directly through Apple's push service using VAPID. Payloads
 
 Multi-instance alerts: all hosts share one VAPID keypair (`~/.config/mushu/vapid.key` copied between hosts), so the PWA's single push subscription can be delivered to by any instance. The settings page stores instance URLs and tokens, and toggling alerts for an instance adds or removes this subscription in that instance's server-side store via `/push/subscribe`, `/push/unsubscribe`, and `/push/status` (all token-authed, CORS-enabled for cross-instance calls).
 
+Single-origin client: one installed PWA connects to every saved instance from the origin it was installed from. Switching hosts swaps the WebSocket and API base URL plus token in place (cross-origin WebSocket and the CORS-enabled API); the page never navigates to another origin, so the iOS in-app browser overlay and its viewport bugs no longer occur.
+
 ### Fallback transport: mosh (installed, optional)
 
 mosh 1.4.0 is installed on both hosts and verified Mac to robrog over the tailnet. It remains the raw-terminal fallback into robrog from any mosh-capable client if the web path is ever down. The Mac deliberately has Remote Login (sshd) off; it is reachable only through mushu-server on its tailnet address.
@@ -64,4 +66,4 @@ mosh 1.4.0 is installed on both hosts and verified Mac to robrog over the tailne
 - No sshd on the Mac; the phone's only path into the Mac is mushu-server.
 - Action endpoints authenticate (token at minimum) even though tailnet-only, because they execute keystrokes into live agent sessions; approvals expire and are audit-logged.
 - Web Push payloads are E2E encrypted; no terminal content in notification payloads regardless.
-- No credentials in this repo; the PWA holds its push subscription plus saved instance URLs and their access tokens in localStorage on the phone.
+- No credentials in this repo; the PWA holds its push subscription plus saved instance URLs and their access tokens on the phone. With the optional Face ID lock enabled, the tokens are AES-GCM encrypted at rest under a WebAuthn passkey PRF secret (Secure Enclave-backed, released only after Face ID / Touch ID); otherwise they live in plain localStorage.

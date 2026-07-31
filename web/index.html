@@ -13,6 +13,10 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <div id="lock" class="hidden">
+    <div id="lock-name">mushu</div>
+    <button id="lock-unlock">Unlock with Face ID</button>
+  </div>
   <div id="safe-probe"></div>
   <div id="header">
     <span id="hostname"></span>
@@ -82,6 +86,7 @@
       <input id="inst-token" type="password" placeholder="instance token" autocomplete="off">
       <button id="inst-add">Add</button>
     </div>
+    <button id="lock-toggle" class="hidden">enable face id lock</button>
     <button id="settings-close">close</button>
   </div>
   <script src="vendor/xterm.js"></script>

@@ -448,11 +448,39 @@ body {
   border-radius: 6px;
 }
 
-#inst-add, #settings-close {
+#inst-add, #settings-close, #lock-toggle {
   padding: 10px 12px;
   font: 13px ui-monospace, monospace;
   color: #c9d1d9;
   background: #21262d;
   border: 1px solid #30363d;
   border-radius: 6px;
+}
+
+#lock-toggle.hidden { display: none; }
+
+/* Face ID vault lock screen. */
+#lock {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  background: #0d1117;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+}
+
+#lock.hidden { display: none; }
+
+#lock-name { font: bold 20px ui-monospace, monospace; color: #c9d1d9; }
+
+#lock-unlock {
+  padding: 12px 22px;
+  font: 15px ui-monospace, monospace;
+  color: #fff;
+  background: #1f6feb;
+  border: 1px solid #1f6feb;
+  border-radius: 10px;
 }

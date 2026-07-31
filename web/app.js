@@ -1,11 +1,5 @@
 /* global Terminal, FitAddon */
-(() => {
-  let token = localStorage.getItem('mushu_token');
-  if (!token) {
-    token = prompt('mushu access token');
-    if (token) localStorage.setItem('mushu_token', token);
-  }
-
+(async () => {
   const term = new Terminal({
     fontFamily: 'ui-monospace, Menlo, monospace',
     fontSize: 13,
@@ -31,29 +25,174 @@
     if (ok) setTimeout(() => status.classList.add('hidden'), 1500);
   }
 
+  // --- instance registry + optional Face ID vault ---
+  // The PWA talks to every saved instance from this one origin (cross-origin
+  // ws + CORS API), so tokens for all hosts live here. With the vault enabled
+  // they are AES-GCM encrypted under a passkey PRF secret that the Secure
+  // Enclave only releases after Face ID / Touch ID.
+
+  const b64e = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+  const b64d = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+
+  let token = null;
+  let instances = null;
+  let vaultKey = null;
+  let vaultCredId = null;
+
+  function loadInstances() {
+    let list = [];
+    try {
+      list = JSON.parse(localStorage.getItem('mushu_instances')) || [];
+    } catch (_) {}
+    const home = list.find((i) => i.url === location.origin);
+    if (!home) {
+      list.unshift({ url: location.origin, token });
+    } else if (token && home.token !== token) {
+      home.token = token;
+    }
+    localStorage.setItem('mushu_instances', JSON.stringify(list));
+    return list;
+  }
+
+  async function prfKey(credId) {
+    const cred = await navigator.credentials.get({
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        allowCredentials: [{ type: 'public-key', id: b64d(credId) }],
+        userVerification: 'required',
+        extensions: { prf: { eval: { first: new TextEncoder().encode('mushu-vault-v1') } } },
+      },
+    });
+    const secret = cred.getClientExtensionResults().prf?.results?.first;
+    if (!secret) throw new Error('passkey returned no PRF secret');
+    return crypto.subtle.importKey('raw', secret, 'AES-GCM', false, ['encrypt', 'decrypt']);
+  }
+
+  async function persistVault() {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const data = await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv },
+      vaultKey,
+      new TextEncoder().encode(JSON.stringify(instances))
+    );
+    localStorage.setItem('mushu_vault', JSON.stringify({ credId: vaultCredId, iv: b64e(iv), data: b64e(data) }));
+    localStorage.removeItem('mushu_instances');
+    localStorage.removeItem('mushu_token');
+  }
+
+  async function unlockVault(vault) {
+    const lock = document.getElementById('lock');
+    const btn = document.getElementById('lock-unlock');
+    lock.classList.remove('hidden');
+    for (;;) {
+      await new Promise((res) => btn.addEventListener('click', res, { once: true }));
+      try {
+        const key = await prfKey(vault.credId);
+        const plain = await crypto.subtle.decrypt(
+          { name: 'AES-GCM', iv: b64d(vault.iv) },
+          key,
+          b64d(vault.data)
+        );
+        vaultKey = key;
+        vaultCredId = vault.credId;
+        lock.classList.add('hidden');
+        return JSON.parse(new TextDecoder().decode(plain));
+      } catch (_) {
+        setStatus('unlock failed, try again', false);
+      }
+    }
+  }
+
+  let vault = null;
+  try {
+    vault = JSON.parse(localStorage.getItem('mushu_vault'));
+  } catch (_) {}
+  if (vault) {
+    instances = await unlockVault(vault);
+  } else {
+    token = localStorage.getItem('mushu_token');
+    if (!token) {
+      token = prompt('mushu access token');
+      if (token) localStorage.setItem('mushu_token', token);
+    }
+    instances = loadInstances();
+  }
+
+  const saveInstances = () => {
+    if (vaultKey) return void persistVault().catch(() => setStatus('vault write failed', false));
+    localStorage.setItem('mushu_instances', JSON.stringify(instances));
+  };
+  const shortHost = (url) => new URL(url).hostname.split('.')[0];
+
+  let active =
+    instances.find((i) => i.url === localStorage.getItem('mushu_active')) ||
+    instances.find((i) => i.url === location.origin) ||
+    instances[0];
+
+  const api = (path, opts = {}) =>
+    fetch(active.url + path, {
+      ...opts,
+      headers: { ...(opts.headers || {}), 'x-mushu-token': active.token || '' },
+    });
+
+  document.documentElement.style.setProperty('--host-h', hostHue(shortHost(active.url)));
+  document.getElementById('hostname').textContent = shortHost(active.url);
+
+  let connectEpoch = 0;
+
   function connect() {
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const url = `${proto}://${location.host}/ws?token=${encodeURIComponent(token)}&cols=${term.cols}&rows=${term.rows}`;
+    const epoch = connectEpoch;
+    const base = new URL(active.url);
+    const proto = base.protocol === 'https:' ? 'wss' : 'ws';
+    const url = `${proto}://${base.host}/ws?token=${encodeURIComponent(active.token || '')}&cols=${term.cols}&rows=${term.rows}`;
     ws = new WebSocket(url);
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
+      if (epoch !== connectEpoch) return;
       retryMs = 500;
-      setStatus('connected', true);
+      setStatus(`connected to ${shortHost(active.url)}`, true);
       sendResize();
     };
-    ws.onmessage = (ev) => term.write(new Uint8Array(ev.data));
+    ws.onmessage = (ev) => {
+      if (epoch === connectEpoch) term.write(new Uint8Array(ev.data));
+    };
     ws.onclose = (ev) => {
+      if (epoch !== connectEpoch) return;
       if (ev.code === 1008 || ev.code === 4401) {
-        localStorage.removeItem('mushu_token');
-        setStatus('bad token, reload to retry', false);
+        if (active.url === location.origin && !vaultKey) {
+          localStorage.removeItem('mushu_token');
+          setStatus('bad token, reload to retry', false);
+        } else {
+          setStatus(`bad token for ${shortHost(active.url)}, fix it in settings`, false);
+        }
         return;
       }
       setStatus('reconnecting…', false);
-      setTimeout(connect, retryMs);
+      setTimeout(() => {
+        if (epoch === connectEpoch) connect();
+      }, retryMs);
       retryMs = Math.min(retryMs * 2, 10000);
     };
-    ws.onerror = () => ws.close();
+    ws.onerror = (ev) => ev.target.close();
+  }
+
+  function setActive(url) {
+    const inst = instances.find((i) => i.url === url);
+    if (!inst || inst === active) return;
+    active = inst;
+    localStorage.setItem('mushu_active', url);
+    connectEpoch += 1;
+    try {
+      ws?.close();
+    } catch (_) {}
+    term.reset();
+    retryMs = 500;
+    document.documentElement.style.setProperty('--host-h', hostHue(shortHost(url)));
+    document.getElementById('hostname').textContent = shortHost(url);
+    connect();
+    refreshAgents();
+    term.focus();
   }
 
   function send(data) {
@@ -100,15 +239,9 @@
   }
   pinSafeArea();
 
-  // Coming back from the iOS in-app browser (host switch) can leave the
-  // WKWebView layout in a broken state that no in-page fix reliably repairs,
-  // so after a host switch the page fully reloads on return; otherwise just
-  // re-pin the insets and snap the scroll back.
+  // Returning from another app can leave the page scrolled or with collapsed
+  // insets; re-pin and snap back whenever we regain the screen.
   function restoreViewport() {
-    if (sessionStorage.getItem('mushu_switched')) {
-      sessionStorage.removeItem('mushu_switched');
-      return location.reload();
-    }
     pinSafeArea();
     window.scrollTo(0, 0);
     fit.fit();
@@ -195,9 +328,9 @@
     }
     const agent = agentList.find((a) => a.pane_id === voiceTarget);
     if (!agent) return setStatus('agent gone, pick a target', false);
-    const res = await fetch('/api/action', {
+    const res = await api('/api/action', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-mushu-token': token },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ pane_id: agent.pane_id, seq: agent.state_change_seq, action: 'prompt', text }),
     });
     if (res.status === 204) {
@@ -297,9 +430,10 @@
   }
 
   async function refreshAgents() {
+    const forInstance = active;
     try {
-      const res = await fetch('/api/agents', { headers: { 'x-mushu-token': token } });
-      if (!res.ok) return;
+      const res = await api('/api/agents');
+      if (!res.ok || forInstance !== active) return;
       const { host, agents, workspaces, tabs } = await res.json();
       agentList = agents;
       workspaceList = workspaces || [];
@@ -365,7 +499,7 @@
     document.getElementById('host-list').innerHTML = instances
       .map(
         (inst) =>
-          `<div class="ws host ${inst.url === location.origin ? 'focused' : ''}" data-url="${esc(inst.url)}">` +
+          `<div class="ws host ${inst === active ? 'focused' : ''}" data-url="${esc(inst.url)}">` +
           `<span class="label">${esc(shortHost(inst.url))}</span>` +
           `<span class="t">${esc(new URL(inst.url).host)}</span></div>`
       )
@@ -408,16 +542,15 @@
   document.getElementById('host-list').addEventListener('click', (ev) => {
     const row = ev.target.closest('.ws');
     if (!row) return;
-    if (row.dataset.url === location.origin) return closeDrawer();
-    sessionStorage.setItem('mushu_switched', '1');
-    location.href = row.dataset.url;
+    setActive(row.dataset.url);
+    closeDrawer();
   });
   backdrop.addEventListener('click', closeDrawer);
 
   async function focusTarget(action, id) {
-    const res = await fetch('/api/action', {
+    const res = await api('/api/action', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-mushu-token': token },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ pane_id: '', seq: 0, action, text: id }),
     });
     if (res.status === 204) {
@@ -475,9 +608,9 @@
 
   async function postAction(action, text) {
     if (!sheetAgent) return;
-    const res = await fetch('/api/action', {
+    const res = await api('/api/action', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-mushu-token': token },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         pane_id: sheetAgent.pane_id,
         seq: sheetAgent.state_change_seq,
@@ -522,22 +655,6 @@
   // just this endpoint's presence in that instance's server-side sub store.
 
   const settings = document.getElementById('settings');
-
-  function loadInstances() {
-    let list = [];
-    try {
-      list = JSON.parse(localStorage.getItem('mushu_instances')) || [];
-    } catch (_) {}
-    if (!list.some((i) => i.url === location.origin)) {
-      list.unshift({ url: location.origin, token });
-      localStorage.setItem('mushu_instances', JSON.stringify(list));
-    }
-    return list;
-  }
-
-  const instances = loadInstances();
-  const saveInstances = () => localStorage.setItem('mushu_instances', JSON.stringify(instances));
-  const shortHost = (url) => new URL(url).hostname.split('.')[0];
   const instHeaders = (inst) => ({ 'content-type': 'application/json', 'x-mushu-token': inst.token });
 
   async function localSubscription() {
@@ -567,13 +684,13 @@
   async function renderInstances() {
     document.getElementById('instance-list').innerHTML = instances
       .map((inst, i) => {
-        const current = inst.url === location.origin;
+        const home = inst.url === location.origin;
         return (
-          `<div class="ws inst ${current ? 'focused' : ''}">` +
+          `<div class="ws inst ${inst === active ? 'focused' : ''}">` +
           `<span class="label">${esc(shortHost(inst.url))}</span>` +
           `<span class="t">${esc(new URL(inst.url).host)}</span>` +
           `<button class="alert" data-alert="${i}">&#8230;</button>` +
-          (current ? '' : `<button class="rm" data-rm="${i}">&#10005;</button>`) +
+          (home ? '' : `<button class="rm" data-rm="${i}">&#10005;</button>`) +
           `</div>`
         );
       })
@@ -665,6 +782,7 @@
   document.getElementById('settings-btn').addEventListener('click', () => {
     settings.classList.remove('hidden');
     renderInstances();
+    syncLockToggle();
   });
   document.getElementById('settings-close').addEventListener('click', () => {
     settings.classList.add('hidden');
@@ -679,10 +797,73 @@
     }
     const rmBtn = ev.target.closest('button.rm');
     if (rmBtn) {
-      instances.splice(Number(rmBtn.dataset.rm), 1);
+      const [removed] = instances.splice(Number(rmBtn.dataset.rm), 1);
+      if (removed === active) setActive(location.origin);
       saveInstances();
       renderInstances();
     }
+  });
+
+  // --- Face ID vault toggle ---
+
+  const lockToggle = document.getElementById('lock-toggle');
+
+  async function syncLockToggle() {
+    const supported =
+      !!window.PublicKeyCredential &&
+      (await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().catch(() => false));
+    lockToggle.classList.toggle('hidden', !supported && !vaultKey);
+    lockToggle.textContent = vaultKey ? 'disable face id lock' : 'enable face id lock';
+  }
+
+  async function enableLock() {
+    const cred = await navigator.credentials.create({
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        rp: { name: 'mushu' },
+        user: { id: crypto.getRandomValues(new Uint8Array(16)), name: 'mushu', displayName: 'mushu' },
+        pubKeyCredParams: [
+          { type: 'public-key', alg: -7 },
+          { type: 'public-key', alg: -257 },
+        ],
+        authenticatorSelection: {
+          authenticatorAttachment: 'platform',
+          residentKey: 'required',
+          userVerification: 'required',
+        },
+        extensions: { prf: {} },
+      },
+    });
+    if (!cred.getClientExtensionResults().prf?.enabled) {
+      throw new Error('this device cannot protect the vault (no PRF support)');
+    }
+    vaultCredId = b64e(cred.rawId);
+    vaultKey = await prfKey(vaultCredId);
+    await persistVault();
+  }
+
+  function disableLock() {
+    localStorage.setItem('mushu_instances', JSON.stringify(instances));
+    const home = instances.find((i) => i.url === location.origin);
+    if (home?.token) localStorage.setItem('mushu_token', home.token);
+    localStorage.removeItem('mushu_vault');
+    vaultKey = null;
+    vaultCredId = null;
+  }
+
+  lockToggle.addEventListener('click', async () => {
+    try {
+      if (vaultKey) {
+        disableLock();
+        setStatus('face id lock disabled', true);
+      } else {
+        await enableLock();
+        setStatus('face id lock enabled', true);
+      }
+    } catch (e) {
+      setStatus(e.message || 'face id setup failed', false);
+    }
+    syncLockToggle();
   });
 
   connect();
