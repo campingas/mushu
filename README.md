@@ -52,7 +52,7 @@ On the phone: open `https://<host>.<tailnet>.ts.net` in Safari, enter the token,
 
 ### Video demo
 
-[▶ Play the mobile demo](output/playwright/mushu-mobile-demo/mushu-mobile-demo.mp4)
+https://github.com/user-attachments/assets/29f306a6-5572-48aa-8235-7a18566b8d3f
 
 ## Status
 
