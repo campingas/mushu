@@ -1,11 +1,25 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, process::Output};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use tokio::process::Command;
+use tokio::{
+    process::Command,
+    sync::watch,
+    time::{timeout, Duration},
+};
 use tracing::{info, warn};
 
-use crate::push::PushStore;
+use crate::{push::PushStore, wait_for_shutdown};
+
+const HERDR_COMMAND_TIMEOUT: Duration = Duration::from_secs(15);
+
+async fn herdr_output(command: &mut Command) -> Result<Output> {
+    command.kill_on_drop(true);
+    timeout(HERDR_COMMAND_TIMEOUT, command.output())
+        .await
+        .context("herdr command timed out")?
+        .context("failed to run herdr")
+}
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Agent {
@@ -60,12 +74,9 @@ pub struct Snapshot {
 }
 
 pub async fn snapshot() -> Result<Snapshot> {
-    let out = Command::new("herdr")
-        .args(["api", "snapshot"])
-        .env_remove("HERDR_ENV")
-        .output()
-        .await
-        .context("failed to run herdr")?;
+    let mut command = Command::new("herdr");
+    command.args(["api", "snapshot"]).env_remove("HERDR_ENV");
+    let out = herdr_output(&mut command).await?;
     anyhow::ensure!(out.status.success(), "herdr api snapshot failed");
     let env: SnapshotEnvelope = serde_json::from_slice(&out.stdout)?;
     Ok(env.result.snapshot)
@@ -100,16 +111,30 @@ pub async fn run_action(req: &ActionRequest) -> Result<(), ActionError> {
         "focus-agent" => Some("agent"),
         _ => None,
     } {
-        if !req.text.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, ':' | '_' | '-')) {
+        if !req
+            .text
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, ':' | '_' | '-'))
+        {
             return Err(ActionError::Invalid("bad target id"));
         }
-        let out = Command::new("herdr")
+        let mut command = Command::new("herdr");
+        command
             .args([scope, "focus", &req.text])
-            .env_remove("HERDR_ENV")
-            .output()
+            .env_remove("HERDR_ENV");
+        let out = herdr_output(&mut command)
             .await
-            .map_err(|e| ActionError::Failed(e.into()))?;
-        audit(req, scope, if out.status.success() { "ok" } else { "herdr-error" }).await;
+            .map_err(ActionError::Failed)?;
+        audit(
+            req,
+            scope,
+            if out.status.success() {
+                "ok"
+            } else {
+                "herdr-error"
+            },
+        )
+        .await;
         return if out.status.success() {
             Ok(())
         } else {
@@ -133,7 +158,11 @@ pub async fn run_action(req: &ActionRequest) -> Result<(), ActionError> {
     match req.action.as_str() {
         "keys" => {
             let keys: Vec<&str> = req.text.split_whitespace().collect();
-            if keys.is_empty() || !keys.iter().all(|k| k.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')) {
+            if keys.is_empty()
+                || !keys
+                    .iter()
+                    .all(|k| k.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+            {
                 return Err(ActionError::Invalid("bad key names"));
             }
             cmd.args(["agent", "send-keys", &req.pane_id]).args(&keys);
@@ -146,8 +175,12 @@ pub async fn run_action(req: &ActionRequest) -> Result<(), ActionError> {
         }
         _ => return Err(ActionError::Invalid("unknown action")),
     }
-    let out = cmd.output().await.map_err(|e| ActionError::Failed(e.into()))?;
-    let result = if out.status.success() { "ok" } else { "herdr-error" };
+    let out = herdr_output(&mut cmd).await.map_err(ActionError::Failed)?;
+    let result = if out.status.success() {
+        "ok"
+    } else {
+        "herdr-error"
+    };
     audit(req, &agent.agent, result).await;
     if out.status.success() {
         Ok(())
@@ -172,7 +205,11 @@ async fn audit(req: &ActionRequest, agent: &str, result: &str) {
     let entry = format!("{line}\n");
     let _ = tokio::task::spawn_blocking(move || {
         use std::io::Write;
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
             let _ = f.write_all(entry.as_bytes());
         }
     })
@@ -180,16 +217,29 @@ async fn audit(req: &ActionRequest, agent: &str, result: &str) {
 }
 
 /// Poll herdr and push a notification on notable agent state transitions.
-pub async fn notifier_loop(host: String, push: PushStore) {
-    if Command::new("herdr").arg("--version").output().await.is_err() {
+pub async fn notifier_loop(host: String, push: PushStore, mut shutdown: watch::Receiver<bool>) {
+    let mut version_command = Command::new("herdr");
+    version_command.arg("--version").kill_on_drop(true);
+    let version = tokio::select! {
+        result = version_command.output() => result,
+        _ = wait_for_shutdown(&mut shutdown) => return,
+    };
+    if version.is_err() {
         info!("herdr not found, agent notifier disabled");
         return;
     }
     let mut last: HashMap<String, Agent> = HashMap::new();
     let mut first_run = true;
     loop {
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-        let agents = match snapshot().await {
+        tokio::select! {
+            _ = tokio::time::sleep(std::time::Duration::from_secs(2)) => {}
+            _ = wait_for_shutdown(&mut shutdown) => break,
+        }
+        let snapshot = tokio::select! {
+            result = snapshot() => result,
+            _ = wait_for_shutdown(&mut shutdown) => break,
+        };
+        let agents = match snapshot {
             Ok(s) => s.agents,
             Err(e) => {
                 warn!("snapshot failed: {e:#}");
@@ -198,7 +248,7 @@ pub async fn notifier_loop(host: String, push: PushStore) {
         };
         for a in &agents {
             let prev = last.get(&a.pane_id);
-            let changed = prev.map_or(true, |p| p.state_change_seq != a.state_change_seq);
+            let changed = prev.is_none_or(|p| p.state_change_seq != a.state_change_seq);
             let prev_status = prev.map(|p| p.status.as_str()).unwrap_or("");
             // Skip the initial snapshot so a restart does not replay stale states.
             if first_run || !changed || prev_status == a.status {

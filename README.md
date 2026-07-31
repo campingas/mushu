@@ -25,9 +25,9 @@ On each host:
 git clone https://github.com/campingas/mushu && cd mushu
 cargo build --release
 cp target/release/mushu-server ~/.local/bin/
-openssl rand -hex 24 > ~/.config/mushu-token && chmod 600 ~/.config/mushu-token
+(umask 077 && openssl rand -hex 24 > ~/.config/mushu-token)
 
-MUSHU_TOKEN=$(cat ~/.config/mushu-token) mushu-server   # serves on 127.0.0.1:8422
+MUSHU_TOKEN_FILE="$HOME/.config/mushu-token" mushu-server # serves on 127.0.0.1:8422
 tailscale serve --bg http://127.0.0.1:8422              # tailnet-only HTTPS
 ```
 
@@ -35,12 +35,13 @@ Configuration is all environment variables:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `MUSHU_TOKEN` | required | access token, 16+ chars |
+| `MUSHU_TOKEN_FILE` | preferred | path to an access token file, trimmed after reading; takes precedence over `MUSHU_TOKEN` |
+| `MUSHU_TOKEN` | required without a token file | compatible inline access token, 16+ chars |
 | `MUSHU_BIND` | `127.0.0.1:8422` | listen address |
 | `MUSHU_CMD` | `herdr` | command attached to the web terminal (e.g. `tmux new-session -A -s main`) |
 | `MUSHU_HOST` | hostname | label shown in the inbox and notifications |
 
-For boot persistence run it as a launchd agent (macOS) or a systemd user service with linger (Linux).
+For boot persistence or on-demand lifecycle control, install the repo-owned launchd or systemd user service and use [`mushuctl`](docs/mushuctl.md). It provides `start`, `stop`, `restart`, sanitized `status`, `logs`, and `with-herdr`; keep the token file mode at `600`.
 
 On the phone: open `https://<host>.<tailnet>.ts.net` in Safari, enter the token, Share, Add to Home Screen, open the app, tap the bell to enable notifications (iOS 16.4+).
 
@@ -61,6 +62,7 @@ Works best for Ghostty + Herdr users today.
 - [ ] M5: polish and a reproducible setup for other Ghostty + Herdr users
 
 See:
+- [docs/mushuctl.md](docs/mushuctl.md) for service installation and lifecycle control
 - [docs/plan.md](docs/plan.md) for milestones and acceptance criteria
 - [docs/tasks.md](docs/tasks.md) for the checklist
 - [docs/architecture.md](docs/architecture.md) for the design

@@ -1,0 +1,15 @@
+[Unit]
+Description=Mushu mobile control surface
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/mushu-server
+Environment=MUSHU_TOKEN_FILE=%h/.config/mushu-token
+Environment=PATH=%h/.local/bin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
