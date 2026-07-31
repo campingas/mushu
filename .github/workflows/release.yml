@@ -19,7 +19,9 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             asset: mushu-server-macos-aarch64
-          - os: macos-13
+          # Cross-compiled from the arm64 runner: Apple's SDK carries both
+          # slices, and macos-13 (the last Intel runner) has been retired.
+          - os: macos-latest
             target: x86_64-apple-darwin
             asset: mushu-server-macos-x86_64
           - os: ubuntu-latest
@@ -39,15 +41,13 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      # musl targets link a vendored OpenSSL so the binary needs no system
-      # libssl; macOS uses Security.framework and needs nothing extra.
       - if: matrix.musl
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-      - if: matrix.musl
-        run: cargo build --release --locked --target ${{ matrix.target }} --features vendored-tls
-      - if: '!matrix.musl'
-        run: cargo build --release --locked --target ${{ matrix.target }}
+      # Every target vendors OpenSSL. web-push reaches it through ece on all
+      # platforms, not only Linux, so a default macOS build links an absolute
+      # Homebrew dylib path that does not exist on a user's machine.
+      - run: cargo build --release --locked --target ${{ matrix.target }} --features vendored-tls
 
       - name: Stage asset
         run: |
