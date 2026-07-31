@@ -82,7 +82,7 @@ Multi-host UX shipped ahead of this milestone on 2026-07-31 (D9-D10): one instal
 Steps:
 
 1. Pairing and honest docs (done 2026-07-31): `mushuctl pair` prints a QR that signs a phone in without typing a token (D11), and the docs now match the shipped app, including the shared VAPID keypair that multi-host alerts require.
-2. Release story: prebuilt binaries per platform and CI running `cargo test`, so the stack no longer requires a Rust toolchain to install.
+2. Release story (done 2026-07-31): prebuilt binaries for macOS and Linux on both architectures published by a tagged release, `install.sh` for one-line setup, and CI running fmt, clippy, and `cargo test` on every push. Installing no longer requires a Rust toolchain.
 3. Quiet hours: a time window in the notifier loop, so a finished agent does not wake you at 3am.
 4. Honest limitations doc versus commercial alternatives (image paste, Live Activities out of scope without a native app) and versus t3code.
 

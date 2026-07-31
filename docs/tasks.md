@@ -58,7 +58,7 @@ Multi-host UX landed early on 2026-07-31: settings panel storing per-host URL an
 - [x] `mushuctl pair`: QR sign-in with the token in the URL fragment (D11); public URL auto-discovered from the Tailscale Serve mapping that proxies our bind address.
 - [x] Static assets served with `Cache-Control: no-cache`, so an upgraded server is not shadowed by a browser-cached bundle.
 - [x] Docs truth-up: README pairing and multi-host sections including the shared VAPID keypair requirement; decisions D9-D11.
-- [ ] Prebuilt release binaries per platform plus CI running `cargo test`.
+- [x] Prebuilt release binaries per platform plus CI running fmt, clippy, and `cargo test`. Four native-runner targets (macOS and Linux, x86_64 and aarch64); Linux builds use musl with OpenSSL vendored behind the `vendored-tls` feature, because web-push offers no rustls path. `install.sh` fetches and checksum-verifies the right asset.
 - [ ] Quiet hours in the notifier loop.
 - [ ] Limitations doc versus commercial alternatives and t3code.
 - [ ] Gate: user validates and decides next direction.

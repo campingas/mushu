@@ -19,14 +19,25 @@
 
 ## Install
 
-Prerequisites: a host (macOS or Linux) running [Herdr](https://herdr.dev), a [Tailscale](https://tailscale.com) tailnet joining host and phone, Rust to build.
+Prerequisites: a host (macOS or Linux) running [Herdr](https://herdr.dev), and a [Tailscale](https://tailscale.com) tailnet joining host and phone.
 
-On each host:
+On each host, install `mushu-server` and `mushuctl` into `~/.local/bin`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/campingas/mushu/main/install.sh | sh
+```
+
+Prebuilt binaries cover macOS and Linux on Intel and ARM; the Linux builds are static and need no system OpenSSL. Prefer to do it yourself? Grab the matching asset from [releases](https://github.com/campingas/mushu/releases) and verify it against the published `SHA256SUMS`, or build from source with Rust:
 
 ```sh
 git clone https://github.com/campingas/mushu && cd mushu
 cargo build --release
-cp target/release/mushu-server ~/.local/bin/
+install -m 755 target/release/mushu-server scripts/mushuctl ~/.local/bin/
+```
+
+Then, on each host:
+
+```sh
 (umask 077 && openssl rand -hex 24 > ~/.config/mushu-token)
 
 MUSHU_TOKEN_FILE="$HOME/.config/mushu-token" mushu-server # serves on 127.0.0.1:8422
