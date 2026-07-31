@@ -61,8 +61,7 @@ impl PushStore {
             .decode(&private_key_b64)
             .context("bad vapid.key")?;
         let secret = p256::SecretKey::from_slice(&secret_bytes).context("bad vapid.key")?;
-        let public_key_b64 =
-            URL_SAFE_NO_PAD.encode(secret.public_key().to_sec1_bytes());
+        let public_key_b64 = URL_SAFE_NO_PAD.encode(secret.public_key().to_sec1_bytes());
 
         let subs_path = dir.join("subscriptions.json");
         let subs: Vec<StoredSubscription> = std::fs::read_to_string(&subs_path)
@@ -104,8 +103,7 @@ impl PushStore {
         let payload = serde_json::to_vec(&NotificationPayload { title, body, host }).unwrap();
         let mut gone: Vec<String> = Vec::new();
         for sub in &subs {
-            let info =
-                SubscriptionInfo::new(&sub.endpoint, &sub.p256dh, &sub.auth);
+            let info = SubscriptionInfo::new(&sub.endpoint, &sub.p256dh, &sub.auth);
             let result = async {
                 let sig = VapidSignatureBuilder::from_base64(
                     &self.private_key_b64,

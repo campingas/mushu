@@ -1,0 +1,202 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+service_name="mushu.service"
+launchd_label="dev.mushu.server"
+launchd_plist="${MUSHU_LAUNCHD_PLIST:-$HOME/Library/LaunchAgents/dev.mushu.server.plist}"
+launchd_log="${MUSHU_LOG_FILE:-$HOME/Library/Logs/mushu/mushu-server.log}"
+
+usage() {
+  cat <<'EOF'
+Usage: mushuctl <command> [args]
+
+Commands:
+  start              Start the Mushu user service
+  stop               Stop the Mushu user service
+  restart            Restart the Mushu user service
+  status             Report Mushu service state without printing its environment
+  logs               Follow Mushu service logs
+  with-herdr [args]  Run herdr in the foreground with Mushu available
+  help               Show this help
+EOF
+}
+
+platform() {
+  case "$(uname -s)" in
+    Darwin) printf '%s\n' macos ;;
+    Linux) printf '%s\n' linux ;;
+    *)
+      printf 'mushuctl: unsupported platform: %s\n' "$(uname -s)" >&2
+      return 1
+      ;;
+  esac
+}
+
+platform_name="$(platform)" || exit 1
+
+launchd_target() {
+  printf 'gui/%s/%s\n' "$(id -u)" "$launchd_label"
+}
+
+is_loaded() {
+  launchctl print "$(launchd_target)" >/dev/null 2>&1
+}
+
+is_active() {
+  case "$platform_name" in
+    macos)
+      local state
+      state="$(
+        launchctl print "$(launchd_target)" 2>/dev/null |
+          awk -F'= ' '/^[[:space:]]*state = / { print $2; exit }'
+      )"
+      [[ "$state" == "running" ]]
+      ;;
+    linux) systemctl --user is-active --quiet "$service_name" ;;
+  esac
+}
+
+start_service() {
+  case "$platform_name" in
+    macos)
+      if is_active; then
+        printf 'Mushu is already active.\n'
+      elif is_loaded; then
+        launchctl kickstart "$(launchd_target)"
+      else
+        if [[ ! -f "$launchd_plist" ]]; then
+          printf 'mushuctl: launchd plist not found: %s\n' "$launchd_plist" >&2
+          return 1
+        fi
+        launchctl bootstrap "gui/$(id -u)" "$launchd_plist"
+      fi
+      ;;
+    linux) systemctl --user start "$service_name" ;;
+  esac
+}
+
+stop_service() {
+  case "$platform_name" in
+    macos)
+      if is_loaded; then
+        launchctl bootout "$(launchd_target)"
+      else
+        printf 'Mushu is already inactive.\n'
+      fi
+      ;;
+    linux) systemctl --user stop "$service_name" ;;
+  esac
+}
+
+restart_service() {
+  case "$platform_name" in
+    macos)
+      if is_loaded; then
+        launchctl kickstart -k "$(launchd_target)"
+      else
+        start_service
+      fi
+      ;;
+    linux) systemctl --user restart "$service_name" ;;
+  esac
+}
+
+show_status() {
+  local state="inactive"
+  if is_active; then
+    state="active"
+  fi
+  printf 'Mushu: %s\n' "$state"
+  case "$platform_name" in
+    macos)
+      if is_loaded; then
+        printf 'Service: loaded (%s)\n' "$launchd_label"
+      else
+        printf 'Service: not loaded (%s)\n' "$launchd_label"
+      fi
+      ;;
+    linux)
+      printf 'Service: %s\n' "$service_name"
+      ;;
+  esac
+}
+
+follow_logs() {
+  case "$platform_name" in
+    macos)
+      if [[ ! -e "$launchd_log" ]]; then
+        printf 'mushuctl: log file not found yet: %s\n' "$launchd_log" >&2
+        return 1
+      fi
+      tail -n 100 -F "$launchd_log"
+      ;;
+    linux) journalctl --user --unit "$service_name" --lines 100 --follow ;;
+  esac
+}
+
+with_herdr() {
+  local started_mushu=0
+  local herdr_status=0
+  if ! is_active; then
+    start_service || return
+    started_mushu=1
+  fi
+
+  cleanup() {
+    if ((started_mushu)); then
+      stop_service
+    fi
+  }
+
+  trap cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  trap 'exit 129' HUP
+  if herdr "$@"; then
+    herdr_status=0
+  else
+    herdr_status=$?
+  fi
+  trap - EXIT INT TERM HUP
+  cleanup
+  return "$herdr_status"
+}
+
+command="${1:-help}"
+if (($# > 0)); then
+  shift
+fi
+
+case "$command" in
+  start)
+    (($# == 0)) || { usage >&2; exit 2; }
+    start_service
+    ;;
+  stop)
+    (($# == 0)) || { usage >&2; exit 2; }
+    stop_service
+    ;;
+  restart)
+    (($# == 0)) || { usage >&2; exit 2; }
+    restart_service
+    ;;
+  status)
+    (($# == 0)) || { usage >&2; exit 2; }
+    show_status
+    ;;
+  logs)
+    (($# == 0)) || { usage >&2; exit 2; }
+    follow_logs
+    ;;
+  with-herdr) with_herdr "$@" ;;
+  help|-h|--help)
+    (($# == 0)) || { usage >&2; exit 2; }
+    usage
+    ;;
+  *)
+    printf 'mushuctl: unknown command: %s\n' "$command" >&2
+    usage >&2
+    exit 2
+    ;;
+esac

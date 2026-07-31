@@ -1,7 +1,15 @@
 mod agents;
 mod push;
 
-use std::{io::Write, net::SocketAddr, sync::Arc};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{
+    ffi::OsString,
+    fs::File,
+    io::{Read, Write},
+    net::SocketAddr,
+    path::Path,
+    sync::Arc,
+};
 
 use anyhow::{Context, Result};
 use axum::{
@@ -18,7 +26,7 @@ use futures_util::{SinkExt, StreamExt};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use rust_embed::RustEmbed;
 use serde::Deserialize;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch, Notify};
 use tracing::{error, info, warn};
 
 #[derive(RustEmbed)]
@@ -31,6 +39,41 @@ struct AppState {
     shell_cmd: Arc<Vec<String>>,
     host: Arc<String>,
     push: push::PushStore,
+    shutdown: watch::Receiver<bool>,
+    sessions: SessionTracker,
+}
+
+#[derive(Clone, Default)]
+struct SessionTracker {
+    active: Arc<AtomicUsize>,
+    notify: Arc<Notify>,
+}
+
+impl SessionTracker {
+    fn enter(&self) -> SessionGuard {
+        self.active.fetch_add(1, Ordering::AcqRel);
+        SessionGuard(self.clone())
+    }
+
+    async fn wait_empty(&self) {
+        loop {
+            let notified = self.notify.notified();
+            if self.active.load(Ordering::Acquire) == 0 {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
+
+struct SessionGuard(SessionTracker);
+
+impl Drop for SessionGuard {
+    fn drop(&mut self) {
+        if self.0.active.fetch_sub(1, Ordering::AcqRel) == 1 {
+            self.0.notify.notify_waiters();
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -64,7 +107,45 @@ fn constant_time_eq(a: &str, b: &str) -> bool {
     if a.len() != b.len() {
         return false;
     }
-    a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+    a.bytes()
+        .zip(b.bytes())
+        .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+        == 0
+}
+
+fn load_token(token_file: Option<OsString>, token: Option<String>) -> Result<String> {
+    let token = match token_file {
+        Some(path) => {
+            let path = Path::new(&path);
+            let mut file = File::open(path)
+                .with_context(|| format!("failed to read MUSHU_TOKEN_FILE {}", path.display()))?;
+            let metadata = file.metadata().with_context(|| {
+                format!("failed to inspect MUSHU_TOKEN_FILE {}", path.display())
+            })?;
+            anyhow::ensure!(
+                metadata.is_file(),
+                "MUSHU_TOKEN_FILE must be a regular file"
+            );
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::MetadataExt;
+                anyhow::ensure!(
+                    metadata.mode() & 0o077 == 0,
+                    "MUSHU_TOKEN_FILE must not be accessible by group or other users"
+                );
+            }
+            let mut contents = String::new();
+            file.read_to_string(&mut contents)
+                .with_context(|| format!("failed to read MUSHU_TOKEN_FILE {}", path.display()))?;
+            contents.trim().to_string()
+        }
+        None => token.context("MUSHU_TOKEN or MUSHU_TOKEN_FILE is required")?,
+    };
+    anyhow::ensure!(
+        token.len() >= 16,
+        "MUSHU_TOKEN must be at least 16 characters"
+    );
+    Ok(token)
 }
 
 #[tokio::main]
@@ -75,8 +156,10 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|_| "127.0.0.1:8422".into())
         .parse()
         .context("invalid MUSHU_BIND")?;
-    let token = std::env::var("MUSHU_TOKEN").context("MUSHU_TOKEN is required")?;
-    anyhow::ensure!(token.len() >= 16, "MUSHU_TOKEN must be at least 16 characters");
+    let token = load_token(
+        std::env::var_os("MUSHU_TOKEN_FILE"),
+        std::env::var("MUSHU_TOKEN").ok(),
+    )?;
     let shell_cmd: Vec<String> = std::env::var("MUSHU_CMD")
         .unwrap_or_else(|_| "herdr".into())
         .split_whitespace()
@@ -95,14 +178,18 @@ async fn main() -> Result<()> {
     });
 
     let push_store = push::PushStore::load_or_init()?;
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let sessions = SessionTracker::default();
     let state = AppState {
         token: Arc::new(token),
         shell_cmd: Arc::new(shell_cmd),
         host: Arc::new(host.clone()),
         push: push_store.clone(),
+        shutdown: shutdown_rx.clone(),
+        sessions: sessions.clone(),
     };
 
-    tokio::spawn(agents::notifier_loop(host, push_store));
+    let notifier_task = tokio::spawn(agents::notifier_loop(host, push_store, shutdown_rx));
 
     let app = Router::new()
         .route("/healthz", get(|| async { "ok" }))
@@ -117,8 +204,39 @@ async fn main() -> Result<()> {
 
     info!("mushu-server listening on {bind}");
     let listener = tokio::net::TcpListener::bind(bind).await?;
-    axum::serve(listener, app).await?;
+    let signal_tx = shutdown_tx.clone();
+    let server_result = axum::serve(listener, app)
+        .with_graceful_shutdown(async move {
+            shutdown_signal().await;
+            info!("shutdown signal received");
+            let _ = signal_tx.send(true);
+        })
+        .await;
+    let _ = shutdown_tx.send(true);
+    sessions.wait_empty().await;
+    notifier_task.await.context("notifier task failed")?;
+    server_result?;
     Ok(())
+}
+
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("failed to install SIGTERM handler");
+        tokio::select! {
+            result = tokio::signal::ctrl_c() => {
+                result.expect("failed to install SIGINT handler");
+            }
+            _ = terminate.recv() => {}
+        }
+    }
+
+    #[cfg(not(unix))]
+    tokio::signal::ctrl_c()
+        .await
+        .expect("failed to install Ctrl-C handler");
 }
 
 async fn static_asset(uri: Uri) -> Response {
@@ -215,7 +333,9 @@ async fn ws_upgrade(
         warn!("rejected ws connection: bad token");
         return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
     }
+    let session = state.sessions.enter();
     ws.on_upgrade(move |socket| async move {
+        let _session = session;
         if let Err(e) = terminal_session(socket, state, params.cols, params.rows).await {
             error!("terminal session ended with error: {e:#}");
         }
@@ -223,6 +343,7 @@ async fn ws_upgrade(
 }
 
 async fn terminal_session(socket: WebSocket, state: AppState, cols: u16, rows: u16) -> Result<()> {
+    let mut shutdown = state.shutdown.clone();
     let pty_system = native_pty_system();
     let pair = pty_system.openpty(PtySize {
         rows,
@@ -272,15 +393,26 @@ async fn terminal_session(socket: WebSocket, state: AppState, cols: u16, rows: u
 
     loop {
         tokio::select! {
+            _ = wait_for_shutdown(&mut shutdown) => break,
             chunk = out_rx.recv() => {
                 match chunk {
-                    Some(data) => ws_tx.send(Message::Binary(data.into())).await?,
+                    Some(data) => {
+                        if let Err(e) = ws_tx.send(Message::Binary(data.into())).await {
+                            warn!("ws send error: {e}");
+                            break;
+                        }
+                    }
                     None => break, // command exited
                 }
             }
             msg = ws_rx.next() => {
                 match msg {
-                    Some(Ok(Message::Binary(data))) => pty_writer.write_all(&data)?,
+                    Some(Ok(Message::Binary(data))) => {
+                        if let Err(e) = pty_writer.write_all(&data) {
+                            warn!("pty write error: {e}");
+                            break;
+                        }
+                    }
                     Some(Ok(Message::Text(text))) => {
                         if let Ok(ControlMsg { resize: Some(sz) }) = serde_json::from_str(&text) {
                             let _ = master.resize(PtySize {
@@ -303,7 +435,127 @@ async fn terminal_session(socket: WebSocket, state: AppState, cols: u16, rows: u
     }
 
     let _ = child.kill();
-    reader_task.abort();
+    let _ = child.wait();
+    drop(pty_writer);
+    drop(master);
+    let _ = reader_task.await;
     info!("terminal detached");
     Ok(())
+}
+
+pub(crate) async fn wait_for_shutdown(shutdown: &mut watch::Receiver<bool>) {
+    if *shutdown.borrow() {
+        return;
+    }
+    let _ = shutdown.changed().await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::load_token;
+    use std::{
+        ffi::OsString,
+        fs,
+        path::{Path, PathBuf},
+        sync::atomic::{AtomicU64, Ordering},
+    };
+
+    static NEXT_FILE_ID: AtomicU64 = AtomicU64::new(0);
+
+    struct TestFile(PathBuf);
+
+    impl TestFile {
+        fn new(contents: &str) -> Self {
+            let id = NEXT_FILE_ID.fetch_add(1, Ordering::Relaxed);
+            let path =
+                std::env::temp_dir().join(format!("mushu-token-test-{}-{id}", std::process::id()));
+            fs::write(&path, contents).expect("write token test file");
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
+                    .expect("secure token test file");
+            }
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TestFile {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.0);
+        }
+    }
+
+    #[test]
+    fn token_file_takes_precedence_and_is_trimmed() {
+        let file = TestFile::new("  file-token-1234567890 \n");
+        let token = load_token(
+            Some(file.path().as_os_str().to_owned()),
+            Some("environment-token-1234".into()),
+        )
+        .expect("load file token");
+        assert_eq!(token, "file-token-1234567890");
+    }
+
+    #[test]
+    fn missing_token_file_does_not_fall_back_to_environment() {
+        let missing =
+            std::env::temp_dir().join(format!("mushu-token-missing-{}", std::process::id()));
+        let error = load_token(
+            Some(missing.into_os_string()),
+            Some("environment-token-1234".into()),
+        )
+        .expect_err("missing configured file must fail");
+        assert!(error
+            .to_string()
+            .contains("failed to read MUSHU_TOKEN_FILE"));
+    }
+
+    #[test]
+    fn invalid_token_file_does_not_fall_back_to_environment() {
+        let dir = std::env::temp_dir();
+        let error = load_token(
+            Some(dir.into_os_string()),
+            Some("environment-token-1234".into()),
+        )
+        .expect_err("unreadable configured file must fail");
+        assert!(error.to_string().contains("must be a regular file"));
+    }
+
+    #[test]
+    fn token_minimum_length_applies_to_file_and_environment() {
+        let file = TestFile::new("too-short\n");
+        let file_error = load_token(Some(OsString::from(file.path())), None)
+            .expect_err("short file token must fail");
+        let env_error =
+            load_token(None, Some("too-short".into())).expect_err("short env token must fail");
+        assert!(file_error.to_string().contains("at least 16 characters"));
+        assert!(env_error.to_string().contains("at least 16 characters"));
+    }
+
+    #[test]
+    fn environment_token_remains_supported() {
+        let token = load_token(None, Some("environment-token-1234".into()))
+            .expect("load environment token");
+        assert_eq!(token, "environment-token-1234");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn token_file_rejects_group_or_other_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let file = TestFile::new("file-token-1234567890\n");
+        fs::set_permissions(file.path(), fs::Permissions::from_mode(0o644))
+            .expect("relax token test permissions");
+        let error = load_token(Some(file.path().as_os_str().to_owned()), None)
+            .expect_err("insecure token permissions must fail");
+        assert!(error
+            .to_string()
+            .contains("must not be accessible by group or other users"));
+    }
 }

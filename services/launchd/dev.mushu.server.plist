@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>dev.mushu.server</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>@MUSHU_SERVER@</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>MUSHU_TOKEN_FILE</key>
+    <string>@MUSHU_TOKEN_FILE@</string>
+    <key>PATH</key>
+    <string>@MUSHU_PATH@</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>@MUSHU_LOG_FILE@</string>
+  <key>StandardErrorPath</key>
+  <string>@MUSHU_LOG_FILE@</string>
+</dict>
+</plist>
