@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.asset }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            asset: mushu-server-macos-aarch64
+          - os: macos-13
+            target: x86_64-apple-darwin
+            asset: mushu-server-macos-x86_64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            asset: mushu-server-linux-x86_64
+            musl: true
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            asset: mushu-server-linux-aarch64
+            musl: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # musl targets link a vendored OpenSSL so the binary needs no system
+      # libssl; macOS uses Security.framework and needs nothing extra.
+      - if: matrix.musl
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - if: matrix.musl
+        run: cargo build --release --locked --target ${{ matrix.target }} --features vendored-tls
+      - if: '!matrix.musl'
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Stage asset
+        run: |
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/release/mushu-server" "dist/${{ matrix.asset }}"
+          chmod 755 "dist/${{ matrix.asset }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: staging
+          merge-multiple: true
+      - name: Collect assets
+        run: |
+          mkdir -p dist
+          cp staging/mushu-server-* dist/
+          cp scripts/mushuctl dist/mushuctl
+          chmod 755 dist/*
+          cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

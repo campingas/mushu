@@ -23,6 +23,15 @@ tower-http = { version = "0.6", features = ["cors"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 qrcode = { version = "0.14", default-features = false }
+# Only present so `vendored-tls` can reach the openssl-sys that web-push pulls
+# in through native-tls; nothing in the source uses it directly.
+openssl = { version = "0.10", optional = true }
+
+[features]
+# Build OpenSSL from source and link it statically. Used for the released Linux
+# musl binaries so they run without a system libssl; local builds keep using the
+# platform's own TLS (Security.framework on macOS, system OpenSSL on Linux).
+vendored-tls = ["dep:openssl", "openssl/vendored"]
 
 [[bin]]
 name = "mushu-server"

@@ -279,7 +279,10 @@ async fn main() -> Result<()> {
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods([Method::GET, Method::POST])
-        .allow_headers([header::CONTENT_TYPE, HeaderName::from_static("x-mushu-token")]);
+        .allow_headers([
+            header::CONTENT_TYPE,
+            HeaderName::from_static("x-mushu-token"),
+        ]);
 
     let app = Router::new()
         .route("/healthz", get(|| async { "ok" }))
