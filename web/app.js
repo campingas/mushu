@@ -307,8 +307,18 @@
 
   const terminalElement = document.getElementById('term');
   let terminalTap = null;
+  let suppressTerminalMouseDown = false;
+
+  terminalElement.addEventListener('mousedown', (ev) => {
+    if (!suppressTerminalMouseDown) return;
+    suppressTerminalMouseDown = false;
+    ev.preventDefault();
+    ev.stopPropagation();
+  }, true);
 
   terminalElement.addEventListener('pointerdown', (ev) => {
+    suppressTerminalMouseDown =
+      ev.pointerType === 'touch' && document.activeElement === term.textarea;
     terminalTap = {
       id: ev.pointerId,
       pointerType: ev.pointerType,
@@ -348,7 +358,11 @@
     const tap = terminalTap;
     terminalTap = null;
     if (tap.moved) return;
-    tap.wasFocused ? term.blur() : term.focus();
+    if (tap.wasFocused) {
+      term.blur();
+    } else {
+      term.focus();
+    }
   });
   terminalElement.addEventListener('pointercancel', () => {
     terminalTap = null;

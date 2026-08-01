@@ -29,6 +29,7 @@ Each of these has cost real debugging time. Do not "clean them up" without readi
 - **Web assets are embedded at compile time** by `rust-embed`. Editing anything in `web/` requires rebuilding the binary, and cargo does not always notice a change confined to `web/`.
 - **Released binaries build with `--features vendored-tls`.** `web-push` reaches OpenSSL through `ece` on *every* platform, not only Linux, so a default macOS build links an absolute Homebrew dylib path that does not exist on a user's machine.
 - **The client never navigates cross-origin.** Switching hosts swaps the WebSocket and API base URL in place (D9); navigating between origins inside an installed iOS app opens the in-app browser and breaks the layout.
+- **iOS terminal dismissal suppresses xterm's compatibility `mousedown` before blurring.** Delayed blur refocuses the terminal; keep the capture-phase, touch-only guard and toolbar visual-viewport placement described in [development.md](docs/development.md#mobile-terminal-controls).
 
 ## Rules
 

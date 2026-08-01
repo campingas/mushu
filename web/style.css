@@ -134,12 +134,22 @@ body {
 }
 
 #toolbar {
+  position: relative;
+  isolation: isolate;
   display: flex;
   gap: 6px;
-  padding: 6px;
-  padding-bottom: calc(6px + var(--safe-bottom, env(safe-area-inset-bottom)));
-  background: #161b22;
+  margin: 2px 0;
+  padding: 3px 6px;
   overflow: hidden;
+}
+
+#toolbar::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0 2px;
+  border-radius: 10px;
+  background: #161b22;
+  content: "";
 }
 
 #toolbar button {
