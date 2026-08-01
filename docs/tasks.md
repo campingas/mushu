@@ -23,7 +23,7 @@ Revised 2026-07-30 for the PWA pivot (decisions D6-D8). Dropped tasks from the B
 
 - [x] Scaffold Rust workspace: `server/` (axum, tokio, portable-pty) + `web/` (vendored xterm.js, embedded via rust-embed).
 - [x] WebSocket terminal endpoint spawning the attach command in a pty (`herdr` by default, or a fallback such as `tmux new-session -A -s main` on a host without Herdr; HERDR* env stripped from the child to avoid nested-attach refusal).
-- [x] Client: resize, reconnect with backoff, compact touch toolbar (Esc, Tab, Ctrl, ^C, disabled move placeholder, compose).
+- [x] Client: resize, reconnect with backoff, compact touch toolbar (Esc, Tab, Ctrl, disabled move placeholder, image Compose, microphone Compose).
 - [x] Bind hardened beyond plan: 127.0.0.1 only, published solely through Tailscale Serve; token auth (min 16 chars, constant-time compare).
 - [x] Tailscale Serve: 443 where free, 8443 on a host whose 443 is taken; the pre-existing mapping verified untouched.
 - [x] Service files: launchd `dev.mushu.server` (macOS), systemd user unit with linger (Linux); tokens in `~/.config/mushu-token` (600).
@@ -35,7 +35,8 @@ Revised 2026-07-30 for the PWA pivot (decisions D6-D8). Dropped tasks from the B
 - [x] Owner verified the keyboard-open correction in the installed iPhone PWA (2026-07-31); this does not reopen the passed M2 gate.
 - [x] Implement compact mobile terminal controls and multiline compose with Clipboard API paste fallback (2026-08-01).
 - [x] Owner verified in the installed iPhone PWA that the first terminal tap opens the keyboard, the second tap fully slides it out and leaves it dismissed, and the compact rounded toolbar sits 2px from the visual viewport bottom without the keyboard and immediately above the native iOS assistant area with it (2026-08-01).
-- [ ] Owner verifies touch access to older Herdr scrollback, quick-key keyboard preservation, multiline compose, and six-control fit at 320px and 390px in the installed iPhone PWA; Safari's native accessory bar is not controllable by the app.
+- [x] Replace the `^C` toolbar slot with an image icon beside the microphone icon; both open Compose without selecting an agent or opening the gallery (2026-08-01).
+- [ ] Owner verifies touch access to older Herdr scrollback, quick-key keyboard preservation, multiline compose, both Compose shortcuts, and six-control fit at 320px and 390px in the installed iPhone PWA; Safari's native accessory bar is not controllable by the app.
 
 ## M3: PWA, inbox, Web Push
 

@@ -514,7 +514,6 @@
   const keys = {
     esc: '\x1b',
     tab: '\t',
-    'ctrl-c': '\x03',
   };
 
   function toggleCtrl(on) {
@@ -593,7 +592,7 @@
   toolbar.addEventListener('click', (ev) => {
     const btn = ev.target.closest('button');
     if (!btn || btn.disabled) return;
-    if (btn.id === 'mic') return openVoiceBar();
+    if (btn.id === 'image-compose' || btn.id === 'mic') return openVoiceBar();
     if (btn.id === 'ctrl') {
       toggleCtrl();
     } else {
