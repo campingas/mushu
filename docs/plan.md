@@ -41,6 +41,8 @@ Post-gate correction (2026-07-31): the fixed client frame now follows the iOS vi
 
 Post-gate correction (2026-08-01): the mobile toolbar now fits six controls without horizontal scrolling, uses a compact rounded surface 2px from the visual viewport bottom and immediately above the native iOS assistant area when the keyboard is open, terminal taps toggle keyboard focus without treating a scroll as a tap, touch drags bridge to Herdr's mouse-wheel scrollback when mouse tracking is active, quick keys preserve the prior keyboard state, and compose supports multiline type, paste, and dictation. The owner validated in the installed iPhone PWA that the keyboard opens on the first terminal tap and fully slides out and stays dismissed on the second tap, along with the compact toolbar placement. Safari's native iOS accessory bar is browser-owned and cannot be removed by the PWA; the remaining installed-PWA behaviors remain owner-validation only.
 
+Post-gate correction (2026-08-01): the toolbar's `^C` slot is now an image icon beside the microphone icon, and both open the same Compose panel. The shortcut does not select an agent or open the gallery; attachment still requires choosing a named agent and tapping Screenshot. The new shortcut and six-control fit remain owner-validation only in the installed iPhone PWA.
+
 ## M3: PWA install, agent inbox, and Web Push (done)
 
 Goal: mushu on the home screen, agent events as push notifications.
