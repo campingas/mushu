@@ -15,6 +15,8 @@ pub struct StoredSubscription {
     pub endpoint: String,
     pub p256dh: String,
     pub auth: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance_url: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -22,6 +24,12 @@ struct NotificationPayload<'a> {
     title: &'a str,
     body: &'a str,
     host: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    instance_url: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pane_id: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    seq: Option<u64>,
 }
 
 #[derive(Clone)]
@@ -116,13 +124,43 @@ impl PushStore {
     }
 
     pub async fn send_to_all(&self, title: &str, body: &str, host: &str) {
+        self.send(title, body, host, None, None).await;
+    }
+
+    pub async fn send_attention(
+        &self,
+        title: &str,
+        body: &str,
+        host: &str,
+        pane_id: &str,
+        seq: u64,
+    ) {
+        self.send(title, body, host, Some(pane_id), Some(seq)).await;
+    }
+
+    async fn send(
+        &self,
+        title: &str,
+        body: &str,
+        host: &str,
+        pane_id: Option<&str>,
+        seq: Option<u64>,
+    ) {
         let subs = self.inner.lock().await.clone();
         if subs.is_empty() {
             return;
         }
-        let payload = serde_json::to_vec(&NotificationPayload { title, body, host }).unwrap();
         let mut gone: Vec<String> = Vec::new();
         for sub in &subs {
+            let payload = serde_json::to_vec(&NotificationPayload {
+                title,
+                body,
+                host,
+                instance_url: pane_id.and(sub.instance_url.as_deref()),
+                pane_id,
+                seq,
+            })
+            .unwrap();
             let info = SubscriptionInfo::new(&sub.endpoint, &sub.p256dh, &sub.auth);
             let result = async {
                 let sig = VapidSignatureBuilder::from_base64(
@@ -151,5 +189,43 @@ impl PushStore {
             self.persist(&subs).await;
             info!("pruned {} dead subscription(s)", gone.len());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{NotificationPayload, StoredSubscription};
+
+    #[test]
+    fn old_subscription_json_remains_compatible() {
+        let sub: StoredSubscription =
+            serde_json::from_str(r#"{"endpoint":"e","p256dh":"p","auth":"a"}"#)
+                .expect("deserialize old subscription");
+        assert_eq!(sub.instance_url, None);
+    }
+
+    #[test]
+    fn attention_payload_contains_only_display_and_routing_fields() {
+        let value = serde_json::to_value(NotificationPayload {
+            title: "codex needs you",
+            body: "repo is waiting for input",
+            host: "alpha",
+            instance_url: Some("https://alpha.example"),
+            pane_id: Some("w1:p2"),
+            seq: Some(42),
+        })
+        .expect("serialize payload");
+        let keys: std::collections::BTreeSet<_> = value
+            .as_object()
+            .expect("payload object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            keys,
+            ["body", "host", "instance_url", "pane_id", "seq", "title"]
+                .into_iter()
+                .collect()
+        );
     }
 }

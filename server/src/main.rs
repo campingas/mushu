@@ -292,6 +292,7 @@ async fn main() -> Result<()> {
         .route("/healthz", get(|| async { "ok" }))
         .route("/ws", get(ws_upgrade))
         .route("/api/agents", get(api_agents))
+        .route("/api/attention", get(api_attention))
         .route("/api/host", get(api_host))
         .route("/api/action", post(api_action))
         .route("/push/vapid", get(push_vapid))
@@ -391,6 +392,35 @@ async fn api_host(headers: HeaderMap, State(state): State<AppState>) -> Response
     }
     Json(serde_json::json!({ "host": *state.host, "theme": state.theme.descriptor() }))
         .into_response()
+}
+
+#[derive(Deserialize)]
+struct AttentionParams {
+    pane_id: String,
+}
+
+async fn api_attention(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Query(params): Query<AttentionParams>,
+) -> Response {
+    if !authed(&headers, &state) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+    match agents::attention(&params.pane_id).await {
+        Ok(attention) => Json(attention).into_response(),
+        Err(agents::AttentionError::Gone) => (StatusCode::NOT_FOUND, "agent gone").into_response(),
+        Err(agents::AttentionError::NotBlocked) => {
+            (StatusCode::CONFLICT, "agent no longer blocked").into_response()
+        }
+        Err(agents::AttentionError::Changed) => {
+            (StatusCode::CONFLICT, "attention request changed").into_response()
+        }
+        Err(agents::AttentionError::Failed(e)) => {
+            error!("attention read failed: {e:#}");
+            (StatusCode::INTERNAL_SERVER_ERROR, "attention read failed").into_response()
+        }
+    }
 }
 
 async fn api_action(

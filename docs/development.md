@@ -38,9 +38,13 @@ Adding an endpoint: register it on the router in `main.rs`, and gate anything se
 
 Agent state comes from Herdr and nothing else (D5). New agent-facing behaviour usually means a new action in `agents.rs` mapped onto a `herdr` subcommand, not new state tracking here. Actions carry `state_change_seq` and are rejected with 409 when stale, so any new action should keep that guard.
 
-Notifications are sent from the notifier loop in `agents.rs`, which polls every two seconds and fires only on status transitions. Send through the loop rather than calling `PushStore::send_to_all` from a new place, so that suppression logic stays in one spot.
+Notifications are sent from the notifier loop in `agents.rs`, which polls every two seconds. The first snapshot seeds state without replaying existing events. A pane must then be blocked in two consecutive snapshots before one attention notification is sent; that incident stays latched across sequence changes and transient oscillation until two consecutive nonblocked snapshots or pane removal. Working-to-done/idle transitions still send completion notifications. Send through the loop rather than calling the push store from a new place, so suppression logic stays in one spot.
+
+`GET /api/attention?pane_id=...` is token-authenticated and only returns context while the current Herdr snapshot still reports that pane as blocked with the same sequence before and after the read. It reads `herdr agent read <pane> --source detection --lines 40 --format text`, caps the returned tail at 12 KiB, and recognizes choices only as a contiguous 2-9 item numbered block starting at 1 near the bottom. Keep terminal context out of push payloads; pushes contain only generic display text and the non-secret instance URL, pane ID, and observed sequence needed to route this fetch after vault unlock.
 
 Client state lives in `localStorage`: `mushu_instances` (host URLs and tokens), `mushu_active`, and `mushu_vault` when the Face ID lock is on. Anything added there must go through `saveInstances()`, which writes to the encrypted vault when it is enabled.
+
+Notification routing also uses `mushu_pending_attention` for non-secret instance URL, pane ID, and sequence metadata. Register the service-worker listener before waiting for Face ID, keep this value and any cold-launch query until the target is consumed after unlock, then clear both; never store a token or terminal context there.
 
 Before every terminal WebSocket connection, the client applies its static fallback and makes an authenticated, two-second-bounded `/api/host` preflight against the captured active instance. Keep that fetch ahead of socket construction, abort it on a host switch, and guard its result with `connectEpoch`; theme discovery must always continue to the terminal on success, timeout, malformed configuration, or an older server without the endpoint.
 
