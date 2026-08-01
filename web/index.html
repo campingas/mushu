@@ -81,8 +81,16 @@
       <textarea id="voice-input" rows="4" placeholder="type, paste, or dictate…" autocomplete="off" autocapitalize="off"></textarea>
       <button id="voice-rec" class="hidden">&#9210;</button>
     </div>
+    <div id="voice-image-preview" class="hidden">
+      <img id="voice-image" alt="Screenshot attachment preview">
+      <div id="voice-image-details"></div>
+      <button id="voice-image-remove" aria-label="Remove screenshot attachment">remove</button>
+    </div>
+    <div id="voice-image-status" role="status" aria-live="polite"></div>
     <div class="sheet-row">
       <button id="voice-paste">Paste</button>
+      <button id="voice-image-pick">Screenshot</button>
+      <input id="voice-image-file" class="hidden" type="file" accept="image/*">
       <button id="voice-send" class="primary">Send</button>
       <button id="voice-send-enter" class="primary">Send &#9166;</button>
       <button id="voice-close">close</button>

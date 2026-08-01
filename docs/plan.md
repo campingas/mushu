@@ -81,6 +81,8 @@ Gate: passed 2026-07-30, approval round-trip validated on 4G.
 
 Post-gate correction (2026-08-01): notification cards act with the current sequence returned after unlock, refresh on stale actions, show resolved requests as such, and expose explicit numbered options only for conservatively recognized 2-9 choice prompts. Direct iOS notification action buttons remain out of scope (D13).
 
+Post-gate addition (2026-08-01): Compose can attach one gallery screenshot to a named-agent prompt through a bounded, stale-guarded multipart endpoint. The client normalizes to PNG while the server independently decodes and re-encodes without metadata, uses private generated cache files that expire after 24 hours, and removes new files on failed dispatch (D15). The owner validated gallery selection, text-plus-image delivery, and agent inspection in the installed iPhone PWA on 2026-08-01. Native share-sheet and clipboard-image integration, multiple images, and terminal attachments remain out of scope.
+
 ## M5: Polish and shareability
 
 Goal: any Ghostty + Herdr user can reproduce this stack from the repo.

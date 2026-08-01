@@ -107,3 +107,15 @@ Why: a phone-friendly self-update path is useful only if it does not turn an aut
 Confirmation: installs never start from a background check. Every update needs an explicit themed host/current/latest confirmation, and a vault-enabled app obtains a fresh platform passkey PRF result before showing it.
 
 Alternatives rejected: prerelease or historical version selection (wider downgrade and compatibility surface), arbitrary release URLs or forks (turns the daemon into a remote code installer), automatic background installation (surprising host mutation), signed attestations beyond published SHA-256 checksums (future hardening, not required for this release), and automatic runtime rollback (service-manager and health-policy work outside this update boundary).
+
+## D15: Screenshot prompts use bounded private host files
+
+Decision: Compose may attach exactly one gallery image only when targeting a named agent. The browser decodes and scales the selection, renders it to PNG, and sends multipart form data to the captured host, pane, and sequence; the authenticated server independently bounds and decodes it, re-encodes a metadata-free PNG, stores it under its private XDG or home cache upload directory, and gives Herdr one controlled prompt containing that generated local path.
+
+Why: coding agents already understand local image paths, so a short-lived host file uses their existing input surface without teaching Mushu or Herdr a new binary protocol. Server-side decode and re-encode makes client normalization a usability optimization rather than a trust boundary, generated names avoid filename injection, and the existing `state_change_seq` check prevents a delayed upload from reaching a different agent state.
+
+Retention and audit: successful files expire after 24 hours so an agent can read them after dispatch. Startup, upload, and 15-minute periodic cleanup remove only expired matching regular upload files, never symlinks or unrelated cache contents; failed post-storage validation or Herdr dispatch removes the new file immediately and reports removal failures. Audit records identify the generated upload, normalized byte size and dimensions, named target, and result, but never image bytes.
+
+Resource and delivery safety: the larger multipart body limit applies only to this route, one authenticated upload is parsed and decoded at a time, and the PNG decoder has explicit dimension and allocation limits. Compose is reset on a host switch and image preparation is generation-guarded. Because a lost HTTP response can make delivery ambiguous without proving Herdr failed, the client blocks an immediate retry and tells the owner to check the agent before closing and trying again.
+
+Alternatives rejected: embedding image bytes in a prompt (large and unsupported), keeping original gallery files or names (metadata and injection risk), remote object storage (unnecessary privacy and operations surface), terminal attachments, multiple images, clipboard-image integration, and a native iOS share extension.

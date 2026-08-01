@@ -12,7 +12,7 @@
 - Installable PWA with a touch toolbar; sessions survive network switches and phone sleep.
 - Agent inbox: live status chips for every agent (working, blocked, done, idle).
 - Push notifications when an agent needs input or finishes, end-to-end encrypted.
-- One-tap approve/deny, quick keys, or a full prompt, stale-guarded and audit-logged.
+- One-tap approve/deny, quick keys, or a full prompt with one gallery screenshot, stale-guarded and audit-logged.
 - All your machines in one app: switch hosts from the drawer, alerts on or off per host.
 - Sign in and pair more hosts by scanning QR codes; optionally lock your tokens behind Face ID.
 - Install the latest stable Mushu release on each host from Settings, with checksum and staged-binary verification before restart.
@@ -116,6 +116,10 @@ https://github.com/user-attachments/assets/29f306a6-5572-48aa-8235-7a18566b8d3f
 ## Status
 
 Works best for Ghostty + Herdr users today.
+
+Named-agent Compose prompts support one screenshot chosen from the phone gallery. Mushu normalizes it locally and again on the host, strips metadata, and retains the private host file for 24 hours; terminal attachments and multiple images are intentionally unsupported.
+
+Mushu is a PWA, not a native iOS app. It does not provide a native share-sheet extension, clipboard-image attachment, Live Activities, or control over Safari's keyboard accessory bar; choose a screenshot from Compose instead.
 
 - [ ] M5: polish and a reproducible setup for other Ghostty + Herdr users
 

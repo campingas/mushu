@@ -56,6 +56,9 @@ Revised 2026-07-30 for the PWA pivot (decisions D6-D8). Dropped tasks from the B
 - [x] Verify round-trip from the phone on 4G (user confirmed 2026-07-30).
 - [x] Gate: user validates the approval flow (2026-07-30).
 - [x] Owner verified one notification for a real approval, deep-link routing through Face ID to the themed attention card, explicit choice submission, and the audited successful action in the installed iPhone PWA (2026-08-01).
+- [x] Add one gallery screenshot to named-agent Compose prompts through a bounded authenticated multipart endpoint, client and server PNG normalization, stale guard, private generated cache files, 24-hour safe cleanup, failure deletion, and byte-free audit metadata (D15, 2026-08-01).
+- [x] Owner verified gallery selection, text-plus-image dispatch, and agent screenshot inspection in the installed iPhone PWA (2026-08-01).
+- [ ] Owner verifies preview removal, image-only dispatch, definite stale/error retention, and ambiguous-delivery guidance in the installed iPhone PWA.
 - [ ] Owner verifies stale and already-resolved notification behavior in the installed iPhone PWA; terminal and desktop browser checks do not validate iOS Web Push lifecycle behavior.
 
 ## M5: Polish and shareability
@@ -74,7 +77,7 @@ Multi-host UX landed early on 2026-07-31: settings panel storing per-host URL an
 - [ ] Owner validates rear-camera and saved-image host pairing, VAPID-mismatch refusal, Face ID update re-authentication, confirmation copy, successful real-host update/reconnect, and failure behavior in the installed iPhone PWA.
 - [ ] Owner verifies the remaining light, custom, and multi-host theme changes in the installed iPhone PWA; dark Catppuccin passed on 2026-08-01, while terminal/browser checks do not validate iOS chrome or perceived contrast.
 - [ ] Quiet hours in the notifier loop.
-- [ ] Limitations doc versus commercial alternatives and t3code.
+- [x] Document screenshot attachment support and the remaining native share-sheet, clipboard-image, multi-image, terminal-attachment, and Live Activities limitations.
 - [ ] Gate: user validates and decides next direction.
 
 ## Dropped by the pivot (record only)
