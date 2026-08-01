@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "scripts": {
+    "visual:check": "scripts/visual check",
+    "visual:update": "scripts/visual update",
+    "visual:ci": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.0"
+  }
+}

@@ -75,6 +75,16 @@ A PWA cannot remove or customize Safari's native iOS keyboard accessory bar. Ter
 
 `web-push` reaches OpenSSL through its `ece` dependency on **every** platform, not only Linux, and offers no rustls option. Default builds therefore link the system OpenSSL, which on macOS means an absolute Homebrew path that does not exist on other machines. Released binaries are built with `--features vendored-tls`, which compiles OpenSSL from source and links it statically. Local development does not need the feature; anything producing a binary for someone else does.
 
+## Visual regression gallery
+
+The Playwright suite serves the real files in `web/` and supplies deterministic API, terminal socket, local-storage, and service-worker fixtures only inside the browser test. There is no production demo mode. Its five 390x844 dark Chromium baselines live in `output/playwright/mushu-gallery`: terminal Codex/Claude chat, the two-host drawer, screenshot Compose, Settings, and the real in-app notification attention card.
+
+Install the pinned dependency with `bun install --frozen-lockfile`, compare the current UI with `bun run visual:check`, and intentionally replace all committed baselines with `bun run visual:update`. Both commands route through `scripts/visual`, which uses the same pinned Playwright Noble container as CI so macOS and Linux do not produce competing baselines. Never update baselines as part of the check command or in CI: inspect every changed PNG before accepting it.
+
+All visual fixtures must stay anonymous. Use reserved `.test` hostnames, generic project paths and messages, and fixture-only tokens; never copy a real host, tailnet, user path, token, terminal transcript, or deployment detail into the tests or screenshots. The suite asserts stable view state, 390px horizontal fit, fixture anonymity, and unexpected console or request failures. CI uses the Playwright 1.62.0 Noble image matching `@playwright/test` 1.62.0, fails on any pixel difference, and uploads failure screenshots, diffs, and traces.
+
+These checks cover deterministic Chromium rendering and client logic only. They do not validate an installed iOS PWA, native keyboard or safe-area behavior, camera/gallery interaction on a phone, service-worker delivery, or Web Push notification delivery; those remain explicit owner-validation boundaries.
+
 ## Releasing
 
 CI (`.github/workflows/ci.yml`) runs `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` on every branch push. Keep those green locally before pushing.

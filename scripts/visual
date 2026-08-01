@@ -1,0 +1,31 @@
+#!/bin/sh
+set -eu
+
+repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+image=mcr.microsoft.com/playwright:v1.62.0-noble
+
+case "${1:-}" in
+  check)
+    playwright_args=""
+    ;;
+  update)
+    playwright_args="--update-snapshots"
+    ;;
+  *)
+    echo "usage: scripts/visual check|update" >&2
+    exit 2
+    ;;
+esac
+
+if [ ! -x "$repo_dir/node_modules/.bin/playwright" ]; then
+  echo "missing dependencies; run: bun install --frozen-lockfile" >&2
+  exit 1
+fi
+
+docker run --rm --init --ipc=host \
+  --user "$(id -u):$(id -g)" \
+  --env HOME=/tmp \
+  --volume "$repo_dir:/work" \
+  --workdir /work \
+  "$image" \
+  ./node_modules/.bin/playwright test $playwright_args

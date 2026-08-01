@@ -79,6 +79,7 @@ Multi-host UX landed early on 2026-07-31: settings panel storing per-host URL an
 - [ ] Owner verifies the remaining light, custom, and multi-host theme changes in the installed iPhone PWA; dark Catppuccin passed on 2026-08-01, while terminal/browser checks do not validate iOS chrome or perceived contrast.
 - [ ] Quiet hours in the notifier loop.
 - [x] Document screenshot attachment support and the remaining native share-sheet, clipboard-image, multi-image, terminal-attachment, and Live Activities limitations.
+- [x] Add five anonymous 390x844 dark Chromium baselines from the real PWA assets, explicit Bun update/check commands, and fail-on-diff CI artifacts without claiming iOS or Web Push delivery validation (2026-08-01).
 - [ ] Gate: user validates and decides next direction.
 
 ## Dropped by the pivot (record only)
