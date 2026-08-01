@@ -34,7 +34,8 @@ Revised 2026-07-30 for the PWA pivot (decisions D6-D8). Dropped tasks from the B
 - [x] Correct the keyboard-open layout so the fixed client frame follows the visual viewport, refits the terminal and remote PTY, and keeps the active prompt visible (2026-07-31).
 - [x] Owner verified the keyboard-open correction in the installed iPhone PWA (2026-07-31); this does not reopen the passed M2 gate.
 - [x] Implement compact mobile terminal controls and multiline compose with Clipboard API paste fallback (2026-08-01).
-- [ ] Owner verifies terminal tap-to-toggle, touch access to older Herdr scrollback, quick-key keyboard preservation, multiline compose, and the 320px/390px layout in the installed iPhone PWA; Safari's native accessory bar is not controllable by the app.
+- [x] Owner verified in the installed iPhone PWA that the first terminal tap opens the keyboard, the second tap fully slides it out and leaves it dismissed, and the compact rounded toolbar sits 2px from the visual viewport bottom without the keyboard and immediately above the native iOS assistant area with it (2026-08-01).
+- [ ] Owner verifies touch access to older Herdr scrollback, quick-key keyboard preservation, multiline compose, and six-control fit at 320px and 390px in the installed iPhone PWA; Safari's native accessory bar is not controllable by the app.
 
 ## M3: PWA, inbox, Web Push
 
