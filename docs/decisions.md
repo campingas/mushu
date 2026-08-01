@@ -79,3 +79,11 @@ Decision: `mushuctl pair` prints a QR code encoding `https://<host>/#<token>`; t
 Why: typing a 48-character token into a phone is the worst step of setup. A fragment is never transmitted to the server, so unlike a query string the token cannot reach an access log or proxy trace. Keeping it in the URL during the Safari visit matters too: iOS gives an installed web app a storage jar separate from Safari's, so a token merely written to storage before "Add to Home Screen" may not survive, while one carried in the bookmark URL always does.
 
 Alternatives rejected: a short-lived one-time pairing code exchanged for the token (removes the token from the URL entirely, but needs a stateful endpoint, expiry and single-use handling, and a fresh QR whenever setup runs slow).
+
+## D12: Adapt Herdr themes per host at terminal connection time
+
+Decision: before each terminal WebSocket connection, including host switches and reconnects, the client fetches an authenticated theme descriptor from that host and applies an adapted Mushu palette to both the PWA and xterm. Herdr's `terminal` theme follows the phone's dark or light color scheme so both phone surfaces stay coherent; it does not attempt parity with desktop Ghostty or another terminal emulator.
+
+Why: each host can intentionally use a different Herdr theme, but copying version-specific upstream constants would make Mushu brittle and still could not reproduce a desktop terminal's rendering. A small normalized descriptor preserves the theme identity and custom accents while Mushu retains readable phone-specific surfaces and contrast guards.
+
+Privacy and platform limits: the server reads only Herdr's theme table from its inherited config location, caps the read, and returns only normalized theme names and supported color tokens. It never returns raw TOML, paths, commands, or parser diagnostics. The web manifest keeps a static fallback color because installed PWA metadata cannot vary per connected host; only the runtime `theme-color` meta tag follows the active palette.

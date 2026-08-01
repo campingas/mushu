@@ -64,6 +64,8 @@ Multi-host UX landed early on 2026-07-31: settings panel storing per-host URL an
 - [x] Static assets served with `Cache-Control: no-cache`, so an upgraded server is not shadowed by a browser-cached bundle.
 - [x] Docs truth-up: README pairing and multi-host sections including the shared VAPID keypair requirement; decisions D9-D11.
 - [x] Prebuilt release binaries per platform plus CI running fmt, clippy, and `cargo test`. Four native-runner targets (macOS and Linux, x86_64 and aarch64); Linux builds use musl with OpenSSL vendored behind the `vendored-tls` feature, because web-push offers no rustls path. `install.sh` fetches and checksum-verifies the right asset.
+- [x] Synchronize an adapted Herdr theme descriptor per host before every terminal connection, including host switches and reconnects (D12).
+- [ ] Owner verifies the remaining light, custom, and multi-host theme changes in the installed iPhone PWA; dark Catppuccin passed on 2026-08-01, while terminal/browser checks do not validate iOS chrome or perceived contrast.
 - [ ] Quiet hours in the notifier loop.
 - [ ] Limitations doc versus commercial alternatives and t3code.
 - [ ] Gate: user validates and decides next direction.

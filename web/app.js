@@ -18,6 +18,134 @@
   let retryMs = 500;
   let ctrlOn = false;
 
+  const makePalette = (colors) => {
+    const p = {
+      surfaceDim: colors.panel,
+      overlay0: colors.surface1,
+      overlay1: colors.muted,
+      cursor: colors.fg,
+      selection: colors.accent + '66',
+      ...colors,
+    };
+    p.ansi = [p.bg, p.red, p.green, p.yellow, p.blue, p.mauve, p.teal, p.fg];
+    p.bright = [p.muted, p.red, p.green, p.yellow, p.blue, p.mauve, p.teal, '#ffffff'];
+    return p;
+  };
+
+  // These palettes adapt Herdr's built-in identities to Mushu's phone UI.
+  // They are intentionally coherent approximations, not copied desktop values.
+  const palettes = {
+    catppuccin: makePalette({ bg: '#181825', fg: '#cdd6f4', panel: '#1e1e2e', surface0: '#313244', surface1: '#45475a', muted: '#a6adc8', accent: '#89b4fa', red: '#f38ba8', green: '#a6e3a1', yellow: '#f9e2af', blue: '#89b4fa', mauve: '#cba6f7', teal: '#94e2d5', peach: '#fab387' }),
+    'catppuccin-latte': makePalette({ bg: '#eff1f5', fg: '#4c4f69', panel: '#e6e9ef', surface0: '#dce0e8', surface1: '#ccd0da', muted: '#6c6f85', accent: '#1e66f5', red: '#d20f39', green: '#358a2f', yellow: '#8a6100', blue: '#1e66f5', mauve: '#8839ef', teal: '#087d8b', peach: '#b84d00' }),
+    'tokyo-night': makePalette({ bg: '#16161e', fg: '#c0caf5', panel: '#1a1b26', surface0: '#24283b', surface1: '#414868', muted: '#9aa5ce', accent: '#7aa2f7', red: '#f7768e', green: '#9ece6a', yellow: '#e0af68', blue: '#7aa2f7', mauve: '#bb9af7', teal: '#7dcfff', peach: '#ff9e64' }),
+    'tokyo-night-day': makePalette({ bg: '#e6e7ed', fg: '#343b58', panel: '#dcdde4', surface0: '#d1d3dc', surface1: '#b7bac7', muted: '#5f6785', accent: '#34548a', red: '#8c4351', green: '#33635c', yellow: '#8f5e15', blue: '#34548a', mauve: '#5a4a78', teal: '#0f6d7a', peach: '#965027' }),
+    dracula: makePalette({ bg: '#191a21', fg: '#f8f8f2', panel: '#282a36', surface0: '#343746', surface1: '#44475a', muted: '#b7b7c5', accent: '#bd93f9', red: '#ff5555', green: '#50fa7b', yellow: '#f1fa8c', blue: '#8be9fd', mauve: '#ff79c6', teal: '#8be9fd', peach: '#ffb86c' }),
+    nord: makePalette({ bg: '#242933', fg: '#d8dee9', panel: '#2e3440', surface0: '#3b4252', surface1: '#4c566a', muted: '#aeb8c8', accent: '#88c0d0', red: '#bf616a', green: '#8fbc8f', yellow: '#d6b978', blue: '#81a1c1', mauve: '#b48ead', teal: '#8fbcbb', peach: '#d08770' }),
+    gruvbox: makePalette({ bg: '#1d2021', fg: '#ebdbb2', panel: '#282828', surface0: '#3c3836', surface1: '#504945', muted: '#bdae93', accent: '#d79921', red: '#fb4934', green: '#b8bb26', yellow: '#fabd2f', blue: '#83a598', mauve: '#d3869b', teal: '#8ec07c', peach: '#fe8019' }),
+    'gruvbox-light': makePalette({ bg: '#fbf1c7', fg: '#3c3836', panel: '#f2e5bc', surface0: '#ebdbb2', surface1: '#d5c4a1', muted: '#665c54', accent: '#b57614', red: '#9d0006', green: '#79740e', yellow: '#8f6500', blue: '#076678', mauve: '#8f3f71', teal: '#427b58', peach: '#af3a03' }),
+    'one-dark': makePalette({ bg: '#21252b', fg: '#abb2bf', panel: '#282c34', surface0: '#353b45', surface1: '#4b5263', muted: '#8b93a3', accent: '#61afef', red: '#e06c75', green: '#98c379', yellow: '#e5c07b', blue: '#61afef', mauve: '#c678dd', teal: '#56b6c2', peach: '#d19a66' }),
+    'one-light': makePalette({ bg: '#fafafa', fg: '#383a42', panel: '#f0f0f1', surface0: '#e5e5e6', surface1: '#c8c8ca', muted: '#5c6370', accent: '#4078f2', red: '#a62626', green: '#397c30', yellow: '#986801', blue: '#4078f2', mauve: '#8f36a5', teal: '#0184bc', peach: '#b85c00' }),
+    solarized: makePalette({ bg: '#002b36', fg: '#eee8d5', panel: '#073642', surface0: '#164956', surface1: '#586e75', muted: '#93a1a1', accent: '#268bd2', red: '#dc322f', green: '#859900', yellow: '#b58900', blue: '#268bd2', mauve: '#d33682', teal: '#2aa198', peach: '#cb4b16' }),
+    'solarized-light': makePalette({ bg: '#fdf6e3', fg: '#073642', panel: '#eee8d5', surface0: '#e3dcc9', surface1: '#c8c1af', muted: '#586e75', accent: '#1679b5', red: '#c52d2a', green: '#687a00', yellow: '#8b6900', blue: '#1679b5', mauve: '#b42d70', teal: '#1b7f78', peach: '#a83d11' }),
+    kanagawa: makePalette({ bg: '#16161d', fg: '#dcd7ba', panel: '#1f1f28', surface0: '#2a2a37', surface1: '#54546d', muted: '#a6a69c', accent: '#7e9cd8', red: '#e46876', green: '#98bb6c', yellow: '#e6c384', blue: '#7e9cd8', mauve: '#957fb8', teal: '#7fb4ca', peach: '#ffa066' }),
+    'kanagawa-lotus': makePalette({ bg: '#f2ecde', fg: '#43436c', panel: '#e7dfcf', surface0: '#ddd4c5', surface1: '#b8afa2', muted: '#625e78', accent: '#4d699b', red: '#c84053', green: '#597b35', yellow: '#836f2e', blue: '#4d699b', mauve: '#624c83', teal: '#4d7d85', peach: '#a45a1c' }),
+    'rose-pine': makePalette({ bg: '#191724', fg: '#e0def4', panel: '#1f1d2e', surface0: '#26233a', surface1: '#403d52', muted: '#aaa5c4', accent: '#c4a7e7', red: '#eb6f92', green: '#9ccf8b', yellow: '#f6c177', blue: '#31748f', mauve: '#c4a7e7', teal: '#9ccfd8', peach: '#f6c177' }),
+    'rose-pine-dawn': makePalette({ bg: '#faf4ed', fg: '#423c52', panel: '#f2e9e1', surface0: '#ebe1d9', surface1: '#cecacd', muted: '#6e687b', accent: '#907aa9', red: '#b4637a', green: '#557c64', yellow: '#8f6534', blue: '#286983', mauve: '#907aa9', teal: '#568a93', peach: '#a96735' }),
+    vesper: makePalette({ bg: '#101010', fg: '#e0e0e0', panel: '#181818', surface0: '#232323', surface1: '#3a3a3a', muted: '#a0a0a0', accent: '#ffc799', red: '#ff8080', green: '#99ffe4', yellow: '#ffc799', blue: '#a0c8ff', mauve: '#e6b3ff', teal: '#99ffe4', peach: '#ffb38a' }),
+  };
+
+  const phoneDark = makePalette({ bg: '#0d1117', fg: '#c9d1d9', panel: '#161b22', surface0: '#21262d', surface1: '#30363d', surfaceDim: '#1a1f26', overlay0: '#30363d', overlay1: '#484f58', muted: '#8b949e', accent: '#1f6feb', red: '#f85149', green: '#3fb950', yellow: '#d29922', blue: '#58a6ff', mauve: '#bc8cff', teal: '#39c5cf', peach: '#f0883e', selection: '#264f78' });
+  const phoneLight = makePalette({ bg: '#f6f8fa', fg: '#24292f', panel: '#ffffff', surface0: '#eaeef2', surface1: '#d0d7de', muted: '#57606a', accent: '#0969da', red: '#cf222e', green: '#1a7f37', yellow: '#7d4e00', blue: '#0969da', mauve: '#8250df', teal: '#1b7c83', peach: '#bc4c00' });
+  const prefersLight = () => matchMedia('(prefers-color-scheme: light)').matches;
+
+  function luminance(hex) {
+    const channels = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+      .map((v) => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+    return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+  }
+
+  function contrast(a, b) {
+    const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (light + 0.05) / (dark + 0.05);
+  }
+
+  const meetsContrast = (color, backgrounds, ratio) =>
+    backgrounds.every((background) => contrast(color, background) >= ratio);
+
+  const contrastText = (background) =>
+    contrast('#ffffff', background) >= contrast('#000000', background) ? '#ffffff' : '#000000';
+
+  function resolvePalette(theme) {
+    if (!theme) return phoneDark;
+    let name = theme.name;
+    if (theme.auto_switch) {
+      name = prefersLight()
+        ? (theme.light_name || 'catppuccin-latte')
+        : (theme.dark_name || 'catppuccin');
+    }
+    let palette = name === 'terminal'
+      ? (prefersLight() ? phoneLight : phoneDark)
+      : (palettes[name] || palettes.catppuccin);
+    palette = { ...palette, ansi: [...palette.ansi], bright: [...palette.bright] };
+    const custom = theme.custom || {};
+    const direct = { accent: 'accent', overlay0: 'overlay0', overlay1: 'overlay1', mauve: 'mauve', blue: 'blue', teal: 'teal', peach: 'peach' };
+    for (const [source, target] of Object.entries(direct)) {
+      if (custom[source]) palette[target] = custom[source];
+    }
+    const backgroundOverrides = {
+      panel_bg: ['panel', custom.panel_bg === 'reset' ? palette.bg : custom.panel_bg],
+      surface0: ['surface0', custom.surface0],
+      surface1: ['surface1', custom.surface1],
+      surface_dim: ['surfaceDim', custom.surface_dim],
+    };
+    const requestedBackgrounds = [
+      palette.bg,
+      backgroundOverrides.panel_bg[1] || palette.panel,
+      backgroundOverrides.surface0[1] || palette.surface0,
+      backgroundOverrides.surface1[1] || palette.surface1,
+      backgroundOverrides.surface_dim[1] || palette.surfaceDim,
+    ];
+    const requestedText = custom.text
+      && meetsContrast(custom.text, requestedBackgrounds, 4.5)
+      ? custom.text
+      : palette.fg;
+    for (const [, [target, color]] of Object.entries(backgroundOverrides)) {
+      if (color && contrast(requestedText, color) >= 4.5) palette[target] = color;
+    }
+    palette.fg = requestedText;
+    const contentBackgrounds = [palette.bg, palette.panel, palette.surface0, palette.surface1, palette.surfaceDim];
+    if (custom.subtext0 && meetsContrast(custom.subtext0, contentBackgrounds, 4.5)) palette.muted = custom.subtext0;
+    for (const color of ['red', 'green', 'yellow']) {
+      if (custom[color] && meetsContrast(custom[color], contentBackgrounds, 3)) palette[color] = custom[color];
+    }
+    palette.cursor = palette.fg;
+    palette.onAccent = contrastText(palette.accent);
+    palette.selection = palette.accent + '66';
+    palette.ansi = [palette.bg, palette.red, palette.green, palette.yellow, palette.blue, palette.mauve, palette.teal, palette.fg];
+    palette.bright = [palette.muted, palette.red, palette.green, palette.yellow, palette.blue, palette.mauve, palette.teal, luminance(palette.bg) > 0.5 ? '#24292f' : '#ffffff'];
+    return palette;
+  }
+
+  function applyPalette(palette) {
+    const css = { bg: 'bg', fg: 'fg', panel: 'panel', surface0: 'surface-0', surface1: 'surface-1', surfaceDim: 'surface-dim', overlay0: 'overlay-0', overlay1: 'overlay-1', muted: 'muted', accent: 'accent', red: 'red', green: 'green', yellow: 'yellow', blue: 'blue', mauve: 'mauve', teal: 'teal', peach: 'peach', cursor: 'cursor', selection: 'selection', onAccent: 'on-accent' };
+    for (const [key, variable] of Object.entries(css)) {
+      document.documentElement.style.setProperty(`--${variable}`, palette[key]);
+    }
+    document.documentElement.style.setProperty('--yellow-soft', palette.yellow + '55');
+    document.documentElement.style.setProperty('--red-glow', palette.red + 'aa');
+    term.options.theme = {
+      background: palette.bg, foreground: palette.fg, cursor: palette.cursor,
+      selectionBackground: palette.selection,
+      black: palette.ansi[0], red: palette.ansi[1], green: palette.ansi[2], yellow: palette.ansi[3],
+      blue: palette.ansi[4], magenta: palette.ansi[5], cyan: palette.ansi[6], white: palette.ansi[7],
+      brightBlack: palette.bright[0], brightRed: palette.bright[1], brightGreen: palette.bright[2], brightYellow: palette.bright[3],
+      brightBlue: palette.bright[4], brightMagenta: palette.bright[5], brightCyan: palette.bright[6], brightWhite: palette.bright[7],
+    };
+    document.querySelector('meta[name="theme-color"]').content = palette.bg;
+  }
+
+  applyPalette(phoneDark);
+
   function setStatus(text, ok) {
     status.textContent = text;
     status.classList.toggle('ok', !!ok);
@@ -164,9 +292,44 @@
   document.getElementById('hostname').textContent = shortHost(active.url);
 
   let connectEpoch = 0;
+  let connectInFlightEpoch = null;
+  let preflightController = null;
+  let reconnectTimer = null;
 
-  function connect() {
+  async function connect() {
     const epoch = connectEpoch;
+    if (connectInFlightEpoch === epoch) return;
+    connectInFlightEpoch = epoch;
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+    preflightController?.abort();
+    const controller = new AbortController();
+    preflightController = controller;
+    applyPalette(phoneDark);
+    const timeout = setTimeout(() => controller.abort(), 2000);
+    const instance = active;
+    try {
+      const res = await fetch(instance.url + '/api/host', {
+        headers: { 'x-mushu-token': instance.token || '' },
+        signal: controller.signal,
+      });
+      if (epoch === connectEpoch && instance === active && res.ok) {
+        const descriptor = await res.json();
+        if (epoch !== connectEpoch || instance !== active) return;
+        applyPalette(resolvePalette(descriptor.theme));
+        if (descriptor.host) {
+          document.documentElement.style.setProperty('--host-h', hostHue(descriptor.host));
+          document.getElementById('hostname').textContent = descriptor.host;
+        }
+      }
+    } catch (_) {
+      // The fallback palette is already active; theme discovery never blocks a terminal.
+    } finally {
+      clearTimeout(timeout);
+      if (preflightController === controller) preflightController = null;
+      if (connectInFlightEpoch === epoch) connectInFlightEpoch = null;
+    }
+    if (epoch !== connectEpoch || instance !== active) return;
     const base = new URL(active.url);
     const proto = base.protocol === 'https:' ? 'wss' : 'ws';
     const url = `${proto}://${base.host}/ws?token=${encodeURIComponent(active.token || '')}&cols=${term.cols}&rows=${term.rows}`;
@@ -194,7 +357,7 @@
         return;
       }
       setStatus('reconnecting…', false);
-      setTimeout(() => {
+      reconnectTimer = setTimeout(() => {
         if (epoch === connectEpoch) connect();
       }, retryMs);
       retryMs = Math.min(retryMs * 2, 10000);
@@ -208,6 +371,10 @@
     active = inst;
     localStorage.setItem('mushu_active', url);
     connectEpoch += 1;
+    preflightController?.abort();
+    connectInFlightEpoch = null;
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
     try {
       ws?.close();
     } catch (_) {}

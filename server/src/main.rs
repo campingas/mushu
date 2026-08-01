@@ -1,5 +1,6 @@
 mod agents;
 mod push;
+mod theme;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{
@@ -42,6 +43,7 @@ struct AppState {
     push: push::PushStore,
     shutdown: watch::Receiver<bool>,
     sessions: SessionTracker,
+    theme: theme::ThemeSource,
 }
 
 #[derive(Clone, Default)]
@@ -263,6 +265,7 @@ async fn main() -> Result<()> {
     let push_store = push::PushStore::load_or_init()?;
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let sessions = SessionTracker::default();
+    let theme = theme::ThemeSource::from_environment(&shell_cmd);
     let state = AppState {
         token: Arc::new(token),
         shell_cmd: Arc::new(shell_cmd),
@@ -270,11 +273,12 @@ async fn main() -> Result<()> {
         push: push_store.clone(),
         shutdown: shutdown_rx.clone(),
         sessions: sessions.clone(),
+        theme,
     };
 
     let notifier_task = tokio::spawn(agents::notifier_loop(host, push_store, shutdown_rx));
 
-    // Other mushu instances' PWAs call /push/* and /api/agents cross-origin;
+    // Other mushu instances' PWAs call /push/* and /api/* cross-origin;
     // auth still comes from the x-mushu-token header on every sensitive route.
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -288,6 +292,7 @@ async fn main() -> Result<()> {
         .route("/healthz", get(|| async { "ok" }))
         .route("/ws", get(ws_upgrade))
         .route("/api/agents", get(api_agents))
+        .route("/api/host", get(api_host))
         .route("/api/action", post(api_action))
         .route("/push/vapid", get(push_vapid))
         .route("/push/subscribe", post(push_subscribe))
@@ -378,6 +383,14 @@ async fn api_agents(headers: HeaderMap, State(state): State<AppState>) -> Respon
         }))
         .into_response(),
     }
+}
+
+async fn api_host(headers: HeaderMap, State(state): State<AppState>) -> Response {
+    if !authed(&headers, &state) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+    Json(serde_json::json!({ "host": *state.host, "theme": state.theme.descriptor() }))
+        .into_response()
 }
 
 async fn api_action(

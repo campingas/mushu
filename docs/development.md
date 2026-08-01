@@ -42,6 +42,10 @@ Notifications are sent from the notifier loop in `agents.rs`, which polls every 
 
 Client state lives in `localStorage`: `mushu_instances` (host URLs and tokens), `mushu_active`, and `mushu_vault` when the Face ID lock is on. Anything added there must go through `saveInstances()`, which writes to the encrypted vault when it is enabled.
 
+Before every terminal WebSocket connection, the client applies its static fallback and makes an authenticated, two-second-bounded `/api/host` preflight against the captured active instance. Keep that fetch ahead of socket construction, abort it on a host switch, and guard its result with `connectEpoch`; theme discovery must always continue to the terminal on success, timeout, malformed configuration, or an older server without the endpoint.
+
+For a `MUSHU_CMD` whose executable basename is `herdr`, `/api/host` reads only `[theme]` and `[theme.custom]` from the inherited Herdr config path (`HERDR_CONFIG_PATH`, then `$XDG_CONFIG_HOME/herdr/config.toml`, then `$HOME/.config/herdr/config.toml`). The response is a normalized descriptor, never raw configuration, filesystem paths, commands, or parser diagnostics. Missing or unusable configuration uses Herdr's documented `catppuccin` default; non-Herdr commands return a null theme.
+
 ## Mobile terminal controls
 
 The terminal toolbar is intentionally compact enough for a 320px viewport: Esc, Tab, Ctrl, ^C, a disabled move placeholder, and compose. A deliberate terminal tap toggles xterm keyboard focus; pointer movement does not toggle it. When Herdr has mouse tracking active, touch drags are translated into xterm wheel events so Herdr can scroll its pane history. Without mouse tracking, xterm keeps its native touch scrollback path. Toolbar quick keys restore the keyboard state that existed before the tap.
