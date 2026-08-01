@@ -42,19 +42,21 @@ Revised 2026-07-30 for the PWA pivot (decisions D6-D8). Dropped tasks from the B
 - [x] PWA manifest, service worker, icons (rsvg-convert), home screen install support.
 - [x] Inbox: header chips per agent (status, name, title) polling `/api/agents` backed by `herdr api snapshot`; empty on hosts without Herdr.
 - [ ] Wire Claude Code hooks / Codex notify as low-latency triggers (deferred: 2s snapshot polling is fast enough for now).
-- [x] Web Push: VAPID keypair auto-generated (`~/.config/mushu/vapid.key`), subscriptions persisted, encrypted sends, dead subscriptions pruned, initial-snapshot replay suppressed; notifies on transitions to blocked and working-to-done/idle.
-- [x] Notification tap focuses or opens the PWA (per-host/session deep link deferred to M4 alongside actions).
+- [x] Web Push: VAPID keypair auto-generated (`~/.config/mushu/vapid.key`), subscriptions persisted, encrypted sends, dead subscriptions pruned, and initial-snapshot replay suppressed; stable blocked incidents are debounced and latched per pane while working-to-done/idle transitions still notify (D13).
+- [x] Notification taps focus or open the installed PWA on its own origin, queue the host/pane target through Face ID unlock, and switch to the exact saved instance in place; terminal context is fetched only afterward through authenticated `/api/attention`.
 - [x] Verify latency and delivery with phone locked (user confirmed test push and live claude-finished push, 2026-07-30).
 - [x] Gate: user validates notifications (2026-07-30).
 
 ## M4: Approvals from the phone
 
 - [x] Action endpoint `/api/action`: keys (whitelisted names) via `herdr agent send-keys`, free text via `herdr agent prompt`, targeted by pane_id.
-- [x] Buttons in inbox: tap a chip for the action sheet (Approve=enter, Esc, y/n/1/2/3, prompt field). iOS Web Push has no action buttons, so notification tap opens the PWA and the sheet is one tap away.
+- [x] Buttons in inbox: tap a chip for the general action sheet. Notification attention cards use bounded current detection context and only expose numbered choices when 2-9 consecutive options starting at 1 are conservatively detected; otherwise they expose Open terminal, Deny/Esc, and Approve/Enter (D13).
 - [x] Token auth, staleness guard (state_change_seq must match, else 409), audit log at `~/.config/mushu/actions.log`.
 - [x] Server-side verification: 409 stale, 404 gone, 400 invalid, 204 success with audit entry (2026-07-30).
 - [x] Verify round-trip from the phone on 4G (user confirmed 2026-07-30).
 - [x] Gate: user validates the approval flow (2026-07-30).
+- [x] Owner verified one notification for a real approval, deep-link routing through Face ID to the themed attention card, explicit choice submission, and the audited successful action in the installed iPhone PWA (2026-08-01).
+- [ ] Owner verifies stale and already-resolved notification behavior in the installed iPhone PWA; terminal and desktop browser checks do not validate iOS Web Push lifecycle behavior.
 
 ## M5: Polish and shareability
 

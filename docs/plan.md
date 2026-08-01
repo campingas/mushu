@@ -60,6 +60,8 @@ Acceptance criteria:
 
 Gate: passed 2026-07-30, test and live pushes delivered to a locked phone.
 
+Post-gate correction (2026-08-01): attention notifications now require two consecutive blocked snapshots and latch per pane until two consecutive nonblocked snapshots or removal. Pushes carry routing metadata but no terminal context; a tap stays on the installed app's origin, queues across Face ID unlock, switches to the exact saved instance, and fetches bounded current context through the authenticated attention endpoint (D13). The owner validated one notification for a real approval, Face ID handoff to the themed prompt card, explicit choice submission, and the audited successful action in the installed iPhone PWA.
+
 ## M4: Approvals from the phone (done)
 
 Goal: act on an agent directly from the inbox or notification.
@@ -76,6 +78,8 @@ Acceptance criteria:
 - A stale or replayed approval is rejected; every action is logged.
 
 Gate: passed 2026-07-30, approval round-trip validated on 4G.
+
+Post-gate correction (2026-08-01): notification cards act with the current sequence returned after unlock, refresh on stale actions, show resolved requests as such, and expose explicit numbered options only for conservatively recognized 2-9 choice prompts. Direct iOS notification action buttons remain out of scope (D13).
 
 ## M5: Polish and shareability
 

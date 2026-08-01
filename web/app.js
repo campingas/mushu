@@ -1,5 +1,54 @@
 /* global Terminal, FitAddon */
 (async () => {
+  let pendingAttentionTarget = null;
+  let attentionTargetHandler = null;
+
+  function queueAttentionTarget(target) {
+    if (!target?.instance_url || !target?.pane_id) return;
+    pendingAttentionTarget = {
+      instance_url: String(target.instance_url),
+      pane_id: String(target.pane_id),
+      seq: Number(target.seq) || 0,
+    };
+    try {
+      localStorage.setItem('mushu_pending_attention', JSON.stringify(pendingAttentionTarget));
+    } catch (_) {}
+    attentionTargetHandler?.(pendingAttentionTarget);
+  }
+
+  function clearPendingAttentionTarget() {
+    pendingAttentionTarget = null;
+    try {
+      localStorage.removeItem('mushu_pending_attention');
+    } catch (_) {}
+    const params = new URLSearchParams(location.search);
+    params.delete('mushu_instance');
+    params.delete('mushu_pane');
+    params.delete('mushu_seq');
+    const query = params.toString();
+    history.replaceState(null, '', location.pathname + (query ? `?${query}` : '') + location.hash);
+  }
+
+  const launchParams = new URLSearchParams(location.search);
+  if (launchParams.has('mushu_instance') && launchParams.has('mushu_pane')) {
+    queueAttentionTarget({
+      instance_url: launchParams.get('mushu_instance'),
+      pane_id: launchParams.get('mushu_pane'),
+      seq: launchParams.get('mushu_seq'),
+    });
+  }
+  if (!pendingAttentionTarget) {
+    try {
+      queueAttentionTarget(JSON.parse(localStorage.getItem('mushu_pending_attention')));
+    } catch (_) {}
+  }
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', (ev) => {
+      if (ev.data?.type === 'mushu-attention') queueAttentionTarget(ev.data.target);
+    });
+    navigator.serviceWorker.register('/sw.js');
+  }
+
   const term = new Terminal({
     fontFamily: 'ui-monospace, Menlo, monospace',
     fontSize: 13,
@@ -672,10 +721,6 @@
 
   // --- PWA + inbox + push ---
 
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js');
-  }
-
   let agentList = [];
   let workspaceList = [];
   let tabList = [];
@@ -848,6 +893,164 @@
     }
   }
 
+  // --- notification attention card ---
+
+  const attentionCard = document.getElementById('attention-card');
+  const attentionTitle = document.getElementById('attention-title');
+  const attentionContext = document.getElementById('attention-context');
+  const attentionActions = document.getElementById('attention-actions');
+  let currentAttention = null;
+  let attentionLoadGeneration = 0;
+  let attentionActionInFlight = false;
+
+  function setAttentionActionsDisabled(disabled) {
+    attentionActions.querySelectorAll('button').forEach((button) => { button.disabled = disabled; });
+  }
+
+  function showAttentionResolved(message) {
+    currentAttention = null;
+    attentionActionInFlight = false;
+    clearPendingAttentionTarget();
+    attentionTitle.textContent = message;
+    attentionContext.textContent = 'This attention request is no longer active.';
+    attentionActions.innerHTML = '';
+    attentionCard.classList.remove('hidden');
+  }
+
+  function renderAttention(attention, inst) {
+    currentAttention = { ...attention, instance: inst };
+    attentionActionInFlight = false;
+    clearPendingAttentionTarget();
+    attentionTitle.textContent = `${attention.agent} needs you · ${attention.title}`;
+    attentionContext.textContent = attention.context;
+    const choices = attention.choices || [];
+    const choiceButtons = choices
+      .map(
+        (choice) =>
+          `<button class="choice" data-attention-key="${esc(choice.key)}">${esc(choice.key)}. ${esc(choice.label)}</button>`
+      )
+      .join('');
+    const approve = choices.length
+      ? ''
+      : '<button class="approve" data-attention-key="enter">Approve / Enter</button>';
+    attentionActions.innerHTML =
+      choiceButtons +
+      '<button data-attention-open>Open terminal</button>' +
+      '<button class="deny" data-attention-key="esc">Deny / Esc</button>' +
+      approve;
+    attentionCard.classList.remove('hidden');
+  }
+
+  async function loadAttentionTarget(target, retries = 1) {
+    const generation = ++attentionLoadGeneration;
+    attentionActionInFlight = true;
+    setAttentionActionsDisabled(true);
+    const inst = instances.find((item) => item.url === target.instance_url);
+    if (!inst) {
+      attentionActionInFlight = false;
+      setAttentionActionsDisabled(false);
+      clearPendingAttentionTarget();
+      setStatus('notification host is not saved in this app', false);
+      return;
+    }
+    setActive(inst.url);
+    try {
+      const res = await fetch(
+        inst.url + '/api/attention?pane_id=' + encodeURIComponent(target.pane_id),
+        { headers: { 'x-mushu-token': inst.token || '' } }
+      );
+      if (generation !== attentionLoadGeneration) return;
+      if (res.status === 409 && retries > 0) {
+        return loadAttentionTarget(target, retries - 1);
+      }
+      if (res.status === 404 || res.status === 409) {
+        return showAttentionResolved('Resolved');
+      }
+      if (!res.ok) {
+        attentionActionInFlight = false;
+        setAttentionActionsDisabled(false);
+        setStatus(`attention failed (${res.status})`, false);
+        return;
+      }
+      renderAttention(await res.json(), inst);
+    } catch (_) {
+      if (generation === attentionLoadGeneration) {
+        attentionActionInFlight = false;
+        setAttentionActionsDisabled(false);
+        setStatus('attention host is offline', false);
+      }
+    }
+  }
+
+  async function postAttentionKey(key) {
+    if (!currentAttention || attentionActionInFlight) return;
+    const attention = currentAttention;
+    const actionGeneration = attentionLoadGeneration;
+    attentionActionInFlight = true;
+    setAttentionActionsDisabled(true);
+    let res;
+    try {
+      res = await fetch(attention.instance.url + '/api/action', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-mushu-token': attention.instance.token || '',
+        },
+        body: JSON.stringify({
+          pane_id: attention.pane_id,
+          seq: attention.seq,
+          action: 'keys',
+          text: key,
+        }),
+      });
+    } catch (_) {
+      attentionActionInFlight = false;
+      setAttentionActionsDisabled(false);
+      setStatus('attention host is offline', false);
+      return;
+    }
+    if (attentionLoadGeneration !== actionGeneration || currentAttention !== attention) return;
+    if (res.status === 204) {
+      attentionTitle.textContent = 'Response sent';
+      attentionActions.innerHTML = '';
+      setTimeout(() => {
+        if (
+          attentionLoadGeneration === actionGeneration
+          && currentAttention?.instance.url === attention.instance.url
+          && currentAttention?.pane_id === attention.pane_id
+        ) {
+          loadAttentionTarget({ instance_url: attention.instance.url, pane_id: attention.pane_id });
+        }
+      }, 700);
+    } else if (res.status === 409) {
+      attentionActionInFlight = false;
+      loadAttentionTarget({ instance_url: attention.instance.url, pane_id: attention.pane_id });
+    } else if (res.status === 404) {
+      showAttentionResolved('Resolved');
+    } else {
+      attentionActionInFlight = false;
+      setAttentionActionsDisabled(false);
+      setStatus(`action failed (${res.status})`, false);
+    }
+  }
+
+  attentionActions.addEventListener('click', (ev) => {
+    const open = ev.target.closest('button[data-attention-open]');
+    if (open && currentAttention) {
+      focusTarget('focus-agent', currentAttention.pane_id);
+      attentionCard.classList.add('hidden');
+      return;
+    }
+    const key = ev.target.closest('button[data-attention-key]')?.dataset.attentionKey;
+    if (key) postAttentionKey(key);
+  });
+  document.getElementById('attention-close').addEventListener('click', () => {
+    attentionCard.classList.add('hidden');
+  });
+
+  attentionTargetHandler = loadAttentionTarget;
+  if (pendingAttentionTarget) loadAttentionTarget(pendingAttentionTarget);
+
   document.getElementById('drawer-list').addEventListener('click', (ev) => {
     const row = ev.target.closest('.ws');
     if (!row) return;
@@ -942,6 +1145,18 @@
 
   const settings = document.getElementById('settings');
   const instHeaders = (inst) => ({ 'content-type': 'application/json', 'x-mushu-token': inst.token });
+  const subscriptionOps = new Map();
+
+  async function withSubscriptionOp(inst, operation) {
+    const previous = subscriptionOps.get(inst.url) || Promise.resolve();
+    const current = previous.catch(() => {}).then(operation);
+    subscriptionOps.set(inst.url, current);
+    try {
+      return await current;
+    } finally {
+      if (subscriptionOps.get(inst.url) === current) subscriptionOps.delete(inst.url);
+    }
+  }
 
   async function localSubscription() {
     const reg = await navigator.serviceWorker?.ready;
@@ -967,6 +1182,37 @@
     return sub;
   }
 
+  function subscriptionBody(sub, instanceUrl) {
+    const json = sub.toJSON();
+    return {
+      endpoint: json.endpoint,
+      p256dh: json.keys.p256dh,
+      auth: json.keys.auth,
+      instance_url: instanceUrl,
+    };
+  }
+
+  async function refreshEnabledSubscription(inst, sub) {
+    return withSubscriptionOp(inst, async () => {
+      const status = await fetch(inst.url + '/push/status', {
+        method: 'POST',
+        headers: instHeaders(inst),
+        body: JSON.stringify({ endpoint: sub.endpoint }),
+      });
+      if (!status.ok) return { response: status, subscribed: false };
+      const subscribed = (await status.json()).subscribed;
+      if (subscribed) {
+        const refreshed = await fetch(inst.url + '/push/subscribe', {
+          method: 'POST',
+          headers: instHeaders(inst),
+          body: JSON.stringify(subscriptionBody(sub, inst.url)),
+        });
+        if (!refreshed.ok) return { response: refreshed, subscribed: false };
+      }
+      return { response: status, subscribed };
+    });
+  }
+
   async function renderInstances() {
     document.getElementById('instance-list').innerHTML = instances
       .map((inst, i) => {
@@ -988,13 +1234,9 @@
         if (!btn) return;
         if (!sub) return setAlertBtn(btn, false);
         try {
-          const res = await fetch(inst.url + '/push/status', {
-            method: 'POST',
-            headers: instHeaders(inst),
-            body: JSON.stringify({ endpoint: sub.endpoint }),
-          });
+          const { response: res, subscribed } = await refreshEnabledSubscription(inst, sub);
           if (!res.ok) return void (btn.textContent = res.status === 401 ? 'bad token' : `err ${res.status}`);
-          setAlertBtn(btn, (await res.json()).subscribed);
+          setAlertBtn(btn, subscribed);
         } catch (_) {
           btn.textContent = 'offline';
         }
@@ -1010,15 +1252,16 @@
   async function toggleAlerts(i, on) {
     const inst = instances[i];
     try {
-      const sub = await ensureSubscription();
-      const json = sub.toJSON();
-      const body = on
-        ? { endpoint: json.endpoint, p256dh: json.keys.p256dh, auth: json.keys.auth }
-        : { endpoint: json.endpoint };
-      const res = await fetch(inst.url + (on ? '/push/subscribe' : '/push/unsubscribe'), {
-        method: 'POST',
-        headers: instHeaders(inst),
-        body: JSON.stringify(body),
+      const res = await withSubscriptionOp(inst, async () => {
+        const sub = await ensureSubscription();
+        const body = on
+          ? subscriptionBody(sub, inst.url)
+          : { endpoint: sub.endpoint };
+        return fetch(inst.url + (on ? '/push/subscribe' : '/push/unsubscribe'), {
+          method: 'POST',
+          headers: instHeaders(inst),
+          body: JSON.stringify(body),
+        });
       });
       if (res.status === 204 || res.status === 404) {
         setStatus(`${shortHost(inst.url)} alerts ${on ? 'on' : 'off'}`, true);
@@ -1151,5 +1394,8 @@
     syncLockToggle();
   });
 
+  localSubscription()
+    .then((sub) => sub && Promise.all(instances.map((inst) => refreshEnabledSubscription(inst, sub))))
+    .catch(() => {});
   connect();
 })();

@@ -87,3 +87,13 @@ Decision: before each terminal WebSocket connection, including host switches and
 Why: each host can intentionally use a different Herdr theme, but copying version-specific upstream constants would make Mushu brittle and still could not reproduce a desktop terminal's rendering. A small normalized descriptor preserves the theme identity and custom accents while Mushu retains readable phone-specific surfaces and contrast guards.
 
 Privacy and platform limits: the server reads only Herdr's theme table from its inherited config location, caps the read, and returns only normalized theme names and supported color tokens. It never returns raw TOML, paths, commands, or parser diagnostics. The web manifest keeps a static fallback color because installed PWA metadata cannot vary per connected host; only the runtime `theme-color` meta tag follows the active palette.
+
+## D13: Attention notifications carry routing, then fetch context after unlock
+
+Decision: notify only after two consecutive blocked snapshots, latch that pane until two consecutive nonblocked snapshots or pane removal, and put only the saved instance URL, pane ID, and observed sequence beside the generic title, body, and host in the encrypted push payload. A notification tap keeps the installed app on its own origin, switches to the exact saved instance in place, and fetches the current prompt through authenticated `GET /api/attention` after the Face ID vault is unlocked.
+
+Why: `state_change_seq` can change while an agent remains blocked, and brief status oscillation can otherwise produce duplicate notifications for one incident. Routing metadata is enough to find the live request without placing terminal text in a payload delivered while the phone is locked. The post-unlock endpoint confirms that the pane remains blocked at the same sequence across its bounded read; a changed request returns conflict instead of pairing old context with a new actionable sequence.
+
+Choice safety: the action card treats a prompt as multiple choice only when a contiguous block of 2-9 numbered options starts at 1 near the bottom of the detection text. Anything ambiguous gets only Open terminal, Deny/Esc, and Approve/Enter; a detected choice prompt gets its explicit numbered options plus Open terminal and Deny/Esc, with no generic approval button.
+
+Alternatives rejected: terminal context in Web Push (unnecessary lock-screen disclosure), direct notification action buttons (not consistently available for installed iOS PWAs), navigating to another host origin (breaks the single-origin installed-app invariant in D9), and trusting the sequence from the notification without refreshing current state (racy and replay-prone).
