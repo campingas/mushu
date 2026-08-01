@@ -89,20 +89,61 @@
     </div>
   </div>
   <div id="settings" class="hidden">
-    <div id="settings-title">instances</div>
-    <div id="instance-list"></div>
-    <div class="sheet-row">
-      <input id="inst-url" type="url" placeholder="https://host.tailnet.ts.net" autocomplete="off" autocapitalize="off">
+    <div id="settings-header">
+      <div id="settings-title">Settings</div>
+      <button id="settings-close" aria-label="Close settings">close</button>
     </div>
-    <div class="sheet-row">
-      <input id="inst-token" type="password" placeholder="instance token" autocomplete="off">
-      <button id="inst-add">Add</button>
+    <div id="settings-scroll">
+      <section class="settings-section">
+        <div class="settings-section-title">
+          <span>Hosts</span>
+          <div class="update-check-control">
+            <span id="update-summary" role="status" aria-live="polite"></span>
+            <button id="update-refresh" aria-label="Check all hosts for updates">check updates</button>
+          </div>
+        </div>
+        <div id="instance-list"></div>
+        <button id="pair-open" class="settings-action">Pair another host</button>
+        <div id="pairing" class="settings-card hidden">
+          <div class="settings-card-title">Scan a Mushu pairing QR</div>
+          <div id="pair-message">Point the rear camera at the QR from <code>mushuctl pair</code>.</div>
+          <video id="pair-video" autoplay muted playsinline></video>
+          <canvas id="pair-canvas" class="hidden"></canvas>
+          <div class="settings-actions">
+            <label for="pair-file" class="settings-button">Choose QR image</label>
+            <input id="pair-file" class="hidden" type="file" accept="image/*">
+            <button id="pair-camera">Use rear camera</button>
+            <button id="pair-close">cancel</button>
+          </div>
+        </div>
+      </section>
+      <section class="settings-section">
+        <div class="settings-section-title">Security</div>
+        <div class="settings-card security-card">
+          <span id="face-icon" aria-hidden="true"></span>
+          <div>
+            <div class="settings-card-title">Face ID lock</div>
+            <div class="settings-card-note">Encrypt saved host tokens and require the device passkey to unlock.</div>
+          </div>
+          <button id="lock-toggle" class="hidden">enable</button>
+        </div>
+      </section>
+      <div class="settings-note">Mushu only installs the latest stable release published by campingas/mushu. Updates are always manual.</div>
     </div>
-    <button id="lock-toggle" class="hidden">enable face id lock</button>
-    <button id="settings-close">close</button>
+    <div id="update-confirm" class="hidden" role="dialog" aria-modal="true">
+      <div class="confirm-card">
+        <div class="settings-card-title">Install host update?</div>
+        <div id="update-confirm-copy"></div>
+        <div class="settings-actions">
+          <button id="update-cancel">cancel</button>
+          <button id="update-install" class="primary">install and restart</button>
+        </div>
+      </div>
+    </div>
   </div>
   <script src="vendor/xterm.js"></script>
   <script src="vendor/addon-fit.js"></script>
+  <script src="vendor/jsQR.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

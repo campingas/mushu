@@ -67,6 +67,11 @@ Multi-host UX landed early on 2026-07-31: settings panel storing per-host URL an
 - [x] Docs truth-up: README pairing and multi-host sections including the shared VAPID keypair requirement; decisions D9-D11.
 - [x] Prebuilt release binaries per platform plus CI running fmt, clippy, and `cargo test`. Four native-runner targets (macOS and Linux, x86_64 and aarch64); Linux builds use musl with OpenSSL vendored behind the `vendored-tls` feature, because web-push offers no rustls path. `install.sh` fetches and checksum-verifies the right asset.
 - [x] Synchronize an adapted Herdr theme descriptor per host before every terminal connection, including host switches and reconnects (D12).
+- [x] Replace the cog sheet with a themed full-screen safe-area Settings page while preserving per-host push controls and the global Face ID vault.
+- [x] Make additional-host pairing QR-only with vendored jsQR camera/image decoding, authenticated `/api/host` validation, exact shared-VAPID enforcement, vault-aware saving, and media/secret cleanup.
+- [x] Embed release tag/SHA/kind, expose `--version` and host build identity, and add authenticated cached/refreshable latest-stable status (D14).
+- [x] Add the serialized fixed-repository installer: revalidate current latest stable, reject development/downgrade/stale/concurrent/arbitrary input, bound HTTPS downloads, verify exact platform checksum and staged identity, fsync, preserve `.previous`, atomically replace, cleanly shut down, and re-exec.
+- [ ] Owner validates rear-camera and saved-image host pairing, VAPID-mismatch refusal, Face ID update re-authentication, confirmation copy, successful real-host update/reconnect, and failure behavior in the installed iPhone PWA.
 - [ ] Owner verifies the remaining light, custom, and multi-host theme changes in the installed iPhone PWA; dark Catppuccin passed on 2026-08-01, while terminal/browser checks do not validate iOS chrome or perceived contrast.
 - [ ] Quiet hours in the notifier loop.
 - [ ] Limitations doc versus commercial alternatives and t3code.

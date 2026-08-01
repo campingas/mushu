@@ -44,10 +44,23 @@ jobs:
       - if: matrix.musl
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
+      - name: Verify tagged version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "mushu-server") | .version')"
+          test "${GITHUB_REF_NAME}" = "v${version}"
+
       # Every target vendors OpenSSL. web-push reaches it through ece on all
       # platforms, not only Linux, so a default macOS build links an absolute
       # Homebrew dylib path that does not exist on a user's machine.
-      - run: cargo build --release --locked --target ${{ matrix.target }} --features vendored-tls
+      - name: Build identified binary
+        run: |
+          kind=dev
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then kind=stable; fi
+          MUSHU_BUILD_TAG="${GITHUB_REF_NAME}" \
+          MUSHU_BUILD_SHA="${GITHUB_SHA}" \
+          MUSHU_BUILD_KIND="$kind" \
+            cargo build --release --locked --target ${{ matrix.target }} --features vendored-tls
 
       - name: Stage asset
         run: |

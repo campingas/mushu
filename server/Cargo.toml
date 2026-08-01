@@ -1,9 +1,10 @@
 [package]
 name = "mushu-server"
-version = "0.1.2"
+version = "1.2.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "Self-hosted PWA control surface for Herdr agent sessions"
+build = "build.rs"
 
 [dependencies]
 anyhow = "1"
@@ -24,6 +25,9 @@ tower-http = { version = "0.6", features = ["cors"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 qrcode = { version = "0.14", default-features = false }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+semver = "1"
+sha2 = "0.10"
 # Only present so `vendored-tls` can reach the openssl-sys that web-push pulls
 # in through native-tls; nothing in the source uses it directly.
 openssl = { version = "0.10", optional = true }

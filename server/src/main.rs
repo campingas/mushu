@@ -1,6 +1,7 @@
 mod agents;
 mod push;
 mod theme;
+mod update;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{
@@ -44,6 +45,7 @@ struct AppState {
     shutdown: watch::Receiver<bool>,
     sessions: SessionTracker,
     theme: theme::ThemeSource,
+    updates: update::UpdateManager,
 }
 
 #[derive(Clone, Default)]
@@ -232,8 +234,20 @@ async fn main() -> Result<()> {
     match std::env::args().nth(1).as_deref() {
         None => {}
         Some("pair") => return pair(),
+        Some("--version" | "-V") => {
+            println!(
+                "mushu-server {} (tag {}, sha {}, {})",
+                update::BUILD.version,
+                update::BUILD.tag,
+                update::BUILD.sha,
+                update::BUILD.kind
+            );
+            return Ok(());
+        }
         Some(other) => {
-            eprintln!("mushu-server: unknown argument: {other}\nusage: mushu-server [pair]");
+            eprintln!(
+                "mushu-server: unknown argument: {other}\nusage: mushu-server [pair|--version]"
+            );
             std::process::exit(2);
         }
     }
@@ -266,6 +280,7 @@ async fn main() -> Result<()> {
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let sessions = SessionTracker::default();
     let theme = theme::ThemeSource::from_environment(&shell_cmd);
+    let updates = update::UpdateManager::new()?;
     let state = AppState {
         token: Arc::new(token),
         shell_cmd: Arc::new(shell_cmd),
@@ -274,6 +289,7 @@ async fn main() -> Result<()> {
         shutdown: shutdown_rx.clone(),
         sessions: sessions.clone(),
         theme,
+        updates: updates.clone(),
     };
 
     let notifier_task = tokio::spawn(agents::notifier_loop(host, push_store, shutdown_rx));
@@ -294,6 +310,7 @@ async fn main() -> Result<()> {
         .route("/api/agents", get(api_agents))
         .route("/api/attention", get(api_attention))
         .route("/api/host", get(api_host))
+        .route("/api/update", get(api_update).post(api_update_install))
         .route("/api/action", post(api_action))
         .route("/push/vapid", get(push_vapid))
         .route("/push/subscribe", post(push_subscribe))
@@ -307,10 +324,13 @@ async fn main() -> Result<()> {
     info!("mushu-server listening on {bind}");
     let listener = tokio::net::TcpListener::bind(bind).await?;
     let signal_tx = shutdown_tx.clone();
+    let shutdown_updates = updates.clone();
     let server_result = axum::serve(listener, app)
         .with_graceful_shutdown(async move {
-            shutdown_signal().await;
-            info!("shutdown signal received");
+            tokio::select! {
+                _ = shutdown_signal() => info!("shutdown signal received"),
+                _ = shutdown_updates.wait_for_restart() => info!("update requested restart"),
+            }
             let _ = signal_tx.send(true);
         })
         .await;
@@ -318,7 +338,22 @@ async fn main() -> Result<()> {
     sessions.wait_empty().await;
     notifier_task.await.context("notifier task failed")?;
     server_result?;
+    if updates.restart_requested() {
+        reexec(updates.executable())?;
+    }
     Ok(())
+}
+
+#[cfg(unix)]
+fn reexec(executable: &Path) -> Result<()> {
+    use std::os::unix::process::CommandExt;
+    let error = std::process::Command::new(executable).exec();
+    Err(error).context("failed to re-exec updated mushu-server")
+}
+
+#[cfg(not(unix))]
+fn reexec(_executable: &Path) -> Result<()> {
+    anyhow::bail!("self-update restart is supported only on Unix platforms")
 }
 
 async fn shutdown_signal() {
@@ -390,8 +425,69 @@ async fn api_host(headers: HeaderMap, State(state): State<AppState>) -> Response
     if !authed(&headers, &state) {
         return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
     }
-    Json(serde_json::json!({ "host": *state.host, "theme": state.theme.descriptor() }))
-        .into_response()
+    Json(serde_json::json!({
+        "host": *state.host,
+        "theme": state.theme.descriptor(),
+        "build": update::BUILD,
+    }))
+    .into_response()
+}
+
+#[derive(Deserialize)]
+struct UpdateQuery {
+    #[serde(default)]
+    refresh: bool,
+}
+
+async fn api_update(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Query(query): Query<UpdateQuery>,
+) -> Response {
+    if !authed(&headers, &state) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+    Json(state.updates.view(query.refresh).await).into_response()
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UpdateInstallRequest {
+    tag: String,
+}
+
+async fn api_update_install(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(request): Json<UpdateInstallRequest>,
+) -> Response {
+    if !authed(&headers, &state) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+    match state.updates.begin(&request.tag).await {
+        Ok(release) => {
+            tokio::spawn(state.updates.clone().install(release));
+            StatusCode::ACCEPTED.into_response()
+        }
+        Err(update::StartError::Concurrent) => {
+            (StatusCode::CONFLICT, "an update is already running").into_response()
+        }
+        Err(update::StartError::DevelopmentBuild) => (
+            StatusCode::CONFLICT,
+            "development builds cannot self-update",
+        )
+            .into_response(),
+        Err(update::StartError::Stale) => {
+            (StatusCode::CONFLICT, "latest stable release changed").into_response()
+        }
+        Err(update::StartError::NotNewer) => {
+            (StatusCode::CONFLICT, "latest stable release is not newer").into_response()
+        }
+        Err(update::StartError::Unavailable(error)) => {
+            warn!("update revalidation failed: {error:#}");
+            (StatusCode::BAD_GATEWAY, "release revalidation failed").into_response()
+        }
+    }
 }
 
 #[derive(Deserialize)]

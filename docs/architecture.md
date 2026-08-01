@@ -33,6 +33,7 @@ One daemon per host, listening only on the host's Tailscale address. Responsibil
 - Inbox endpoint: agent list and states from `herdr api snapshot` and `herdr agent wait` events.
 - Action endpoint: approve/deny/prompt mapped to `herdr agent send-keys` / `herdr agent prompt`, with token auth, expiry for stale approvals, and an audit log.
 - Web Push: hold subscriptions, send VAPID-signed encrypted notifications on agent events, with dedup and rate limiting.
+- Host updates: report embedded tag/SHA/kind identity, check only the fixed repository's latest stable GitHub release, and replace a validated matching binary without delegating trust to the browser.
 
 ### Front end: PWA
 
@@ -56,7 +57,7 @@ Multi-instance alerts: all hosts share one VAPID keypair (`~/.config/mushu/vapid
 
 Attention routing: a stable blocked incident produces one encrypted push containing generic display text plus the subscription's saved instance URL, pane ID, and observed sequence, never terminal context. The service worker tags notifications per host and pane; a tap focuses or cold-opens the installed app on its existing origin and passes that target by message or launch query. The app queues it before Face ID unlock, switches hosts in place, then uses the saved token to fetch bounded current context and act with the refreshed sequence (D13).
 
-Pairing: `mushuctl pair` prints a QR code for `https://<host>/#<token>`, resolving the public URL from the Tailscale Serve mapping whose proxy target matches `MUSHU_BIND` (or `MUSHU_URL` when set). The token stays in the fragment, which is never sent to the server and survives into the home screen bookmark, so the installed app is signed in without typing.
+Pairing: `mushuctl pair` prints a QR code for `https://<host>/#<token>`, resolving the public URL from the Tailscale Serve mapping whose proxy target matches `MUSHU_BIND` (or `MUSHU_URL` when set). The token stays in the fragment, which is never sent to the server and survives into the home screen bookmark, so the installed app is signed in without typing. The same QR is the only in-app host-add path: the PWA decodes it locally from the rear camera or an imported image, authenticates `/api/host`, compares VAPID keys, and saves through the encrypted-vault-aware instance path.
 
 Single-origin client: one installed PWA connects to every saved instance from the origin it was installed from. Switching hosts swaps the WebSocket and API base URL plus token in place (cross-origin WebSocket and the CORS-enabled API); the page never navigates to another origin, so the iOS in-app browser overlay and its viewport bugs no longer occur.
 
@@ -69,5 +70,7 @@ mosh is installed on both reference hosts and verified host to host over the tai
 - mushu-server binds only to the host's Tailscale address; nothing on LAN or WAN. Tailscale Grants stay least-privilege (self-owned devices only).
 - A host can run no sshd at all; the phone's only path into it is then mushu-server.
 - Action endpoints authenticate (token at minimum) even though tailnet-only, because they execute keystrokes into live agent sessions; approvals expire and are audit-logged.
+- Update endpoints use the same token authentication. The browser submits only the latest tag it just confirmed; the host independently revalidates the fixed `campingas/mushu` latest-stable endpoint and rejects development builds, downgrades, stale tags, concurrent jobs, unknown request fields, and nonmatching release assets.
+- A host update downloads the exact platform asset and `SHA256SUMS` with HTTPS, time, and size bounds; verifies the exact checksum entry and staged `--version`; fsyncs the staged file and directory; preserves the old inode as `.previous`; then atomically renames, shuts down terminal sessions, and re-execs. No automatic background install or runtime rollback occurs.
 - Web Push payloads are E2E encrypted; no terminal content in notification payloads regardless.
 - No credentials in this repo; the PWA holds its push subscription plus saved instance URLs and their access tokens on the phone. With the optional Face ID lock enabled, the tokens are AES-GCM encrypted at rest under a WebAuthn passkey PRF secret (Secure Enclave-backed, released only after Face ID / Touch ID); otherwise they live in plain localStorage.

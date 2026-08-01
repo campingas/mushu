@@ -9,7 +9,8 @@ How to build, run, and extend mushu. See [architecture.md](architecture.md) for 
 | `server/src/main.rs` | routing, auth, WebSocket terminal, static assets, the `pair` subcommand |
 | `server/src/agents.rs` | Herdr snapshot parsing, actions, and the push notifier loop |
 | `server/src/push.rs` | VAPID keypair, subscription store, Web Push sending |
-| `web/` | the PWA: `index.html`, `app.js`, `style.css`, `sw.js`, vendored xterm.js |
+| `server/src/update.rs` | fixed-repository latest-stable checks, download validation, atomic replacement |
+| `web/` | the PWA: `index.html`, `app.js`, `style.css`, `sw.js`, vendored xterm.js and jsQR |
 | `scripts/mushuctl` | service control and phone pairing |
 | `services/` | launchd and systemd unit templates |
 
@@ -26,7 +27,7 @@ MUSHU_BIND=127.0.0.1:8498 MUSHU_HOST=alpha \
 
 Open `http://127.0.0.1:8498/#devtokendevtoken`: the fragment signs you in, so no token prompt. Plain HTTP is fine locally, but service workers and Web Push need HTTPS, so notifications can only be exercised through Tailscale Serve.
 
-To work on multi-host behaviour, start a second instance on another port with a different `MUSHU_HOST`, then add it from the settings panel. Host switching, per-host alert toggles, and the drawer all work against two local instances.
+To work on multi-host behaviour, start a second instance on another HTTPS origin with a different `MUSHU_HOST` and shared VAPID key, then pair its `mushuctl pair` QR from Settings. Host switching, per-host alert toggles, and the drawer all work against two instances. The in-app parser intentionally rejects HTTP pairing URLs, so local QR pairing needs a trusted local HTTPS endpoint; use direct storage setup only for isolated browser-test fixtures, not as a product flow.
 
 **The web assets are embedded into the binary** at compile time by `rust-embed` (`#[derive(RustEmbed)] #[folder = "../web"]`). Editing anything in `web/` therefore requires rebuilding the binary, and cargo does not always notice a change confined to `web/`; touch a source file or `cargo clean -p mushu-server` if a change seems not to apply. Assets are served with `Cache-Control: no-cache` because without it browsers kept serving the pre-upgrade bundle after a deploy.
 
@@ -43,6 +44,8 @@ Notifications are sent from the notifier loop in `agents.rs`, which polls every 
 `GET /api/attention?pane_id=...` is token-authenticated and only returns context while the current Herdr snapshot still reports that pane as blocked with the same sequence before and after the read. It reads `herdr agent read <pane> --source detection --lines 40 --format text`, caps the returned tail at 12 KiB, and recognizes choices only as a contiguous 2-9 item numbered block starting at 1 near the bottom. Keep terminal context out of push payloads; pushes contain only generic display text and the non-secret instance URL, pane ID, and observed sequence needed to route this fetch after vault unlock.
 
 Client state lives in `localStorage`: `mushu_instances` (host URLs and tokens), `mushu_active`, and `mushu_vault` when the Face ID lock is on. Anything added there must go through `saveInstances()`, which writes to the encrypted vault when it is enabled.
+
+Settings is a full safe-area page. Because it is an absolute child of the padded fixed body, its header must include `--safe-top` itself so its title and close control stay below iOS system chrome. Additional hosts are QR-only: jsQR 1.4.0 is vendored under Apache-2.0 in `web/vendor/`, camera capture asks for the environment-facing camera, image import is decoded locally, and a candidate is saved only after authenticated `/api/host` validation and exact VAPID-key comparison. Stop media tracks, detach `srcObject`, zero the canvas, clear the file input, and release candidate/token references on success, failure, cancel, and Settings close.
 
 Notification routing also uses `mushu_pending_attention` for non-secret instance URL, pane ID, and sequence metadata. Register the service-worker listener before waiting for Face ID, keep this value and any cold-launch query until the target is consumed after unlock, then clear both; never store a token or terminal context there.
 
@@ -70,6 +73,12 @@ A PWA cannot remove or customize Safari's native iOS keyboard accessory bar. Ter
 
 CI (`.github/workflows/ci.yml`) runs `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` on every branch push. Keep those green locally before pushing.
 
-Pushing a `v*` tag triggers `.github/workflows/release.yml`, which builds four targets (macOS and Linux, x86_64 and aarch64), publishes them with `mushuctl` and a `SHA256SUMS` file, and generates release notes. Both macOS binaries are built on the arm64 runner, the x86_64 one cross-compiled, because the Intel runner has been retired. The workflow also accepts `workflow_dispatch`, which runs the builds without publishing anything: the release job is gated on the ref being a tag.
+Pushing a `v*` tag triggers `.github/workflows/release.yml`, which first requires the tag to equal `v` plus `server/Cargo.toml`'s package version, then builds four targets (macOS and Linux, x86_64 and aarch64), publishes them with `mushuctl` and a `SHA256SUMS` file, and generates release notes. Tagged binaries embed the tag, `GITHUB_SHA`, and `stable` kind; `mushu-server --version` exposes all three. Both macOS binaries are built on the arm64 runner, the x86_64 one cross-compiled, because the Intel runner has been retired. The workflow also accepts `workflow_dispatch`, which produces `dev` binaries without publishing anything.
+
+`GET /api/update` is authenticated and accepts only the optional `?refresh=true` cache bypass. A successful explicit refresh also clears a prior failed install state so the owner can retry after a transient failure; a failed release check preserves the install failure. `POST /api/update` accepts only `{ "tag": "v…" }`, re-fetches the fixed latest stable release, and rejects development builds, non-newer/stale tags, unknown fields, and another running job. The updater maps the running OS/architecture to one exact release asset, validates its fixed GitHub download URL, bounded size, exact `SHA256SUMS` entry, and staged stable `--version`, then fsyncs and atomically replaces `current_exe` while retaining `<binary>.previous`. Do not add client-supplied repositories, URLs, or a second restart mechanism.
+
+Settings update checks report progress globally and on every host row. Keep one global check in flight, leave failed hosts individually retryable, and bind asynchronous row updates to stable host identities so a host removal, reorder, or rerender cannot receive another host's result.
+
+Exercise refusal paths with a normal development build: authenticated `GET /api/update` should report `kind: dev` and `install_allowed: false`, unauthenticated access should return 401, and an authenticated POST should return 409 without contacting the release installer. Full replacement is validated only with a disposable tagged stable binary and fake release fixture; never point a development check at the live installed service.
 
 `install.sh` resolves `releases/latest`, so it only works once a release exists.
