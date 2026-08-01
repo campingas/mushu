@@ -1,4 +1,4 @@
-use std::{collections::HashMap, process::Output};
+use std::{collections::HashMap, path::Path, process::Output};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -9,7 +9,7 @@ use tokio::{
 };
 use tracing::{info, warn};
 
-use crate::{push::PushStore, wait_for_shutdown};
+use crate::{push::PushStore, uploads::StoredUpload, wait_for_shutdown};
 
 const HERDR_COMMAND_TIMEOUT: Duration = Duration::from_secs(15);
 const ATTENTION_LINES: &str = "40";
@@ -274,6 +274,90 @@ pub enum ActionError {
     Failed(anyhow::Error),
 }
 
+pub async fn validate_prompt_target(pane_id: &str, seq: u64) -> Result<Agent, ActionError> {
+    let agents = snapshot().await.map_err(ActionError::Failed)?.agents;
+    let agent = agents
+        .into_iter()
+        .find(|agent| agent.pane_id == pane_id)
+        .ok_or(ActionError::Gone)?;
+    if agent.agent.trim().is_empty() {
+        return Err(ActionError::Invalid("named agent required"));
+    }
+    if agent.state_change_seq != seq {
+        return Err(ActionError::Stale);
+    }
+    Ok(agent)
+}
+
+pub fn image_prompt(text: &str, path: &Path) -> String {
+    let instruction = if text.trim().is_empty() {
+        "Review the attached screenshot and explain or act on what it shows."
+    } else {
+        text.trim()
+    };
+    format!(
+        "{instruction}\n\nAttached screenshot (local file): {}",
+        path.to_string_lossy()
+    )
+}
+
+pub struct ImageDetails {
+    pub width: u32,
+    pub height: u32,
+    pub size: usize,
+}
+
+pub async fn run_image_prompt(
+    pane_id: &str,
+    seq: u64,
+    expected_agent: &Agent,
+    prompt: &str,
+    upload: &StoredUpload,
+    details: &ImageDetails,
+) -> Result<(), ActionError> {
+    let agent = match validate_prompt_target(pane_id, seq).await {
+        Ok(agent) if agent.agent == expected_agent.agent => agent,
+        Ok(_) => {
+            audit_image(expected_agent, upload, details, "target-changed").await;
+            return Err(ActionError::Stale);
+        }
+        Err(error) => {
+            let result = match error {
+                ActionError::Gone => "gone",
+                ActionError::Stale => "stale",
+                ActionError::Invalid(_) => "invalid",
+                ActionError::Failed(_) => "snapshot-error",
+            };
+            audit_image(expected_agent, upload, details, result).await;
+            return Err(error);
+        }
+    };
+    let mut command = Command::new("herdr");
+    command
+        .args(["agent", "prompt", pane_id, prompt])
+        .env_remove("HERDR_ENV");
+    let out = match herdr_output(&mut command).await {
+        Ok(out) => out,
+        Err(error) => {
+            audit_image(&agent, upload, details, "dispatch-error").await;
+            return Err(ActionError::Failed(error));
+        }
+    };
+    let result = if out.status.success() {
+        "ok"
+    } else {
+        "herdr-error"
+    };
+    audit_image(&agent, upload, details, result).await;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(ActionError::Failed(anyhow::anyhow!(
+            String::from_utf8_lossy(&out.stderr).to_string()
+        )))
+    }
+}
+
 pub async fn run_action(req: &ActionRequest) -> Result<(), ActionError> {
     if req.text.len() > 4096 {
         return Err(ActionError::Invalid("text too long"));
@@ -384,6 +468,35 @@ async fn audit(req: &ActionRequest, agent: &str, result: &str) {
             .open(path)
         {
             let _ = f.write_all(entry.as_bytes());
+        }
+    })
+    .await;
+}
+
+async fn audit_image(agent: &Agent, upload: &StoredUpload, details: &ImageDetails, result: &str) {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    let line = serde_json::json!({
+        "ts": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
+        "pane_id": agent.pane_id,
+        "agent": agent.agent,
+        "action": "prompt-image",
+        "upload_id": upload.id,
+        "path": upload.path,
+        "size": details.size,
+        "width": details.width,
+        "height": details.height,
+        "result": result,
+    });
+    let path = std::path::PathBuf::from(home).join(".config/mushu/actions.log");
+    let entry = format!("{line}\n");
+    let _ = tokio::task::spawn_blocking(move || {
+        use std::io::Write;
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
+            let _ = file.write_all(entry.as_bytes());
         }
     })
     .await;
@@ -520,9 +633,11 @@ pub async fn notifier_loop(host: String, push: PushStore, mut shutdown: watch::R
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::{
-        attention_is_current, bounded_context, completion_changed, detect_choices, Agent,
-        AttentionChoice, AttentionTracker,
+        attention_is_current, bounded_context, completion_changed, detect_choices, image_prompt,
+        Agent, AttentionChoice, AttentionTracker,
     };
 
     fn agent(pane_id: &str, status: &str, seq: u64) -> Agent {
@@ -627,6 +742,16 @@ mod tests {
         assert!(attention_is_current(&agent("p1", "blocked", 7), 7));
         assert!(!attention_is_current(&agent("p1", "blocked", 8), 7));
         assert!(!attention_is_current(&agent("p1", "working", 7), 7));
+    }
+
+    #[test]
+    fn image_prompt_uses_text_or_clear_default_and_controlled_path_label() {
+        let path = Path::new("/cache/mushu/uploads/upload-abc.png");
+        assert_eq!(
+            image_prompt("  Check this error  ", path),
+            "Check this error\n\nAttached screenshot (local file): /cache/mushu/uploads/upload-abc.png"
+        );
+        assert!(image_prompt("", path).starts_with("Review the attached screenshot"));
     }
 
     #[test]

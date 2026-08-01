@@ -31,7 +31,7 @@ One daemon per host, listening only on the host's Tailscale address. Responsibil
 - Serve the PWA (static assets, single binary embed).
 - Terminal endpoint: spawn `herdr session attach` (or `herdr agent attach`) in a pty per WebSocket connection, with auto-reconnect and resize handling on the client.
 - Inbox endpoint: agent list and states from `herdr api snapshot` and `herdr agent wait` events.
-- Action endpoint: approve/deny/prompt mapped to `herdr agent send-keys` / `herdr agent prompt`, with token auth, expiry for stale approvals, and an audit log.
+- Action endpoints: approve/deny/text prompt mapped to `herdr agent send-keys` / `herdr agent prompt`, plus one normalized screenshot attached to a named-agent prompt, with token auth, expiry for stale actions, and an audit log.
 - Web Push: hold subscriptions, send VAPID-signed encrypted notifications on agent events, with dedup and rate limiting.
 - Host updates: report embedded tag/SHA/kind identity, check only the fixed repository's latest stable GitHub release, and replace a validated matching binary without delegating trust to the browser.
 
@@ -70,6 +70,7 @@ mosh is installed on both reference hosts and verified host to host over the tai
 - mushu-server binds only to the host's Tailscale address; nothing on LAN or WAN. Tailscale Grants stay least-privilege (self-owned devices only).
 - A host can run no sshd at all; the phone's only path into it is then mushu-server.
 - Action endpoints authenticate (token at minimum) even though tailnet-only, because they execute keystrokes into live agent sessions; approvals expire and are audit-logged.
+- Screenshot prompts accept one bounded multipart PNG after client-side gallery normalization, decode and re-encode it without metadata, and store it as a server-generated private cache file for 24 hours. The generated path is passed to Herdr as part of one argv prompt, never through a shell; cleanup only removes expired regular files matching Mushu's upload naming scheme and never follows symlinks (D15).
 - Update endpoints use the same token authentication. The browser submits only the latest tag it just confirmed; the host independently revalidates the fixed `campingas/mushu` latest-stable endpoint and rejects development builds, downgrades, stale tags, concurrent jobs, unknown request fields, and nonmatching release assets.
 - A host update downloads the exact platform asset and `SHA256SUMS` with HTTPS, time, and size bounds; verifies the exact checksum entry and staged `--version`; fsyncs the staged file and directory; preserves the old inode as `.previous`; then atomically renames, shuts down terminal sessions, and re-execs. No automatic background install or runtime rollback occurs.
 - Web Push payloads are E2E encrypted; no terminal content in notification payloads regardless.

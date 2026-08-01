@@ -417,6 +417,7 @@
   function setActive(url) {
     const inst = instances.find((i) => i.url === url);
     if (!inst || inst === active) return;
+    resetVoiceComposerForHostSwitch();
     active = inst;
     localStorage.setItem('mushu_active', url);
     connectEpoch += 1;
@@ -606,7 +607,49 @@
 
   const voicebar = document.getElementById('voicebar');
   const voiceInput = document.getElementById('voice-input');
+  const voiceSendButton = document.getElementById('voice-send');
+  const voiceSendEnterButton = document.getElementById('voice-send-enter');
+  const voiceImageFile = document.getElementById('voice-image-file');
+  const voiceImagePick = document.getElementById('voice-image-pick');
+  const voiceImageRemove = document.getElementById('voice-image-remove');
+  const voiceImageStatus = document.getElementById('voice-image-status');
+  const voiceImagePreview = document.getElementById('voice-image-preview');
+  let voiceImageAttachment = null;
+  let voiceImagePreparing = false;
+  let voiceImageGeneration = 0;
+  let voiceSendInFlight = false;
+  let voiceDeliveryUnknown = false;
   let voiceTarget = 'terminal'; // 'terminal' or an agent pane_id
+
+  function setVoiceImageStatus(message, error = false) {
+    voiceImageStatus.textContent = message;
+    voiceImageStatus.classList.toggle('error', error);
+  }
+
+  function clearVoiceImage() {
+    if (voiceImageAttachment) URL.revokeObjectURL(voiceImageAttachment.previewUrl);
+    voiceImageAttachment = null;
+    voiceImageFile.value = '';
+    document.getElementById('voice-image').removeAttribute('src');
+    voiceImagePreview.classList.add('hidden');
+    setVoiceImageStatus('');
+    updateVoiceControls();
+  }
+
+  function updateVoiceControls() {
+    const namedAgent = voiceTarget !== 'terminal';
+    const hasText = Boolean(voiceInput.value.trim());
+    const busy = voiceSendInFlight || voiceImagePreparing;
+    voiceImagePick.disabled = !namedAgent || busy;
+    voiceImageRemove.disabled = busy;
+    voiceSendButton.disabled = busy || voiceDeliveryUnknown || (!hasText && !(namedAgent && voiceImageAttachment));
+    voiceSendEnterButton.disabled = busy || voiceDeliveryUnknown || !hasText;
+    if (!namedAgent && voiceImageAttachment) {
+      setVoiceImageStatus('Screenshot held; choose a named agent to attach it.');
+    } else if (voiceImageAttachment && !voiceImageStatus.classList.contains('error')) {
+      setVoiceImageStatus('Screenshot ready to send.');
+    }
+  }
 
   function renderVoiceTargets() {
     const chips = [
@@ -619,6 +662,7 @@
     document.getElementById('voice-targets').innerHTML = chips.join('');
     document.getElementById('voice-send-enter').style.display =
       voiceTarget === 'terminal' ? '' : 'none';
+    updateVoiceControls();
   }
 
   function openVoiceBar() {
@@ -629,10 +673,29 @@
   }
 
   function closeVoiceBar() {
+    if (voiceImagePreparing) {
+      voiceImageGeneration += 1;
+      voiceImagePreparing = false;
+      voiceImageFile.value = '';
+      setVoiceImageStatus('');
+    }
+    voiceDeliveryUnknown = false;
+    updateVoiceControls();
+    voicebar.classList.add('hidden');
+  }
+
+  function resetVoiceComposerForHostSwitch() {
+    voiceImageGeneration += 1;
+    voiceImagePreparing = false;
+    voiceDeliveryUnknown = false;
+    voiceTarget = 'terminal';
+    voiceInput.value = '';
+    clearVoiceImage();
     voicebar.classList.add('hidden');
   }
 
   document.getElementById('voice-targets').addEventListener('click', (ev) => {
+    if (voiceSendInFlight || voiceImagePreparing) return;
     const chip = ev.target.closest('.vt');
     if (!chip) return;
     voiceTarget = chip.dataset.t;
@@ -642,8 +705,9 @@
 
   async function voiceSend(withEnter) {
     const text = voiceInput.value;
-    if (!text.trim()) return;
+    if (voiceSendInFlight || voiceImagePreparing || voiceDeliveryUnknown) return;
     if (voiceTarget === 'terminal') {
+      if (!text.trim()) return;
       term.paste(text);
       if (withEnter) send('\r');
       voiceInput.value = '';
@@ -652,26 +716,138 @@
     }
     const agent = agentList.find((a) => a.pane_id === voiceTarget);
     if (!agent) return setStatus('agent gone, pick a target', false);
-    const res = await api('/api/action', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ pane_id: agent.pane_id, seq: agent.state_change_seq, action: 'prompt', text }),
-    });
-    if (res.status === 204) {
-      voiceInput.value = '';
-      setStatus(`sent to ${agent.agent}`, true);
-      closeVoiceBar();
-    } else if (res.status === 409) {
-      setStatus('agent state changed, try again', false);
-      refreshAgents();
-    } else {
-      setStatus(`send failed (${res.status})`, false);
+    if (!text.trim() && !voiceImageAttachment) return;
+    const target = {
+      url: active.url,
+      token: active.token || '',
+      paneId: agent.pane_id,
+      seq: agent.state_change_seq,
+      name: agent.agent,
+    };
+    const attachment = voiceImageAttachment;
+    voiceSendInFlight = true;
+    updateVoiceControls();
+    setVoiceImageStatus(attachment ? 'Sending screenshot…' : 'Sending…');
+    try {
+      let res;
+      if (attachment) {
+        const form = new FormData();
+        form.append('pane_id', target.paneId);
+        form.append('seq', String(target.seq));
+        if (text) form.append('text', text);
+        form.append('image', attachment.blob, 'screenshot.png');
+        res = await fetch(target.url + '/api/prompt-image', {
+          method: 'POST',
+          headers: { 'x-mushu-token': target.token },
+          body: form,
+        });
+      } else {
+        res = await fetch(target.url + '/api/action', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-mushu-token': target.token },
+          body: JSON.stringify({ pane_id: target.paneId, seq: target.seq, action: 'prompt', text }),
+        });
+      }
+      if (res.status === 204) {
+        voiceInput.value = '';
+        clearVoiceImage();
+        setStatus(`sent to ${target.name}`, true);
+        closeVoiceBar();
+      } else if (res.status === 409) {
+        setVoiceImageStatus('Agent state changed. Review the target and send again.', true);
+        setStatus('agent state changed, attachment retained', false);
+        refreshAgents();
+      } else {
+        const detail = (await res.text()).trim();
+        const fallback = {
+          400: 'The screenshot request was invalid.',
+          413: 'The screenshot is too large.',
+          415: 'That image type is not supported.',
+          429: 'Another screenshot is being processed. Try again shortly.',
+        }[res.status] || `Send failed (${res.status}).`;
+        setVoiceImageStatus(detail || fallback, true);
+        setStatus(fallback, false);
+      }
+    } catch (_) {
+      voiceDeliveryUnknown = true;
+      setVoiceImageStatus('Delivery status unknown. Close Compose and check the agent before sending again.', true);
+      setStatus('delivery unknown; check the agent before retrying', false);
+    } finally {
+      voiceSendInFlight = false;
+      updateVoiceControls();
     }
   }
 
   document.getElementById('voice-send').addEventListener('click', () => voiceSend(false));
   document.getElementById('voice-send-enter').addEventListener('click', () => voiceSend(true));
   document.getElementById('voice-close').addEventListener('click', closeVoiceBar);
+  voiceInput.addEventListener('input', updateVoiceControls);
+  voiceImagePick.addEventListener('click', () => {
+    if (voiceTarget !== 'terminal' && !voiceSendInFlight && !voiceImagePreparing) voiceImageFile.click();
+  });
+  voiceImageRemove.addEventListener('click', clearVoiceImage);
+
+  voiceImageFile.addEventListener('change', async () => {
+    const file = voiceImageFile.files?.[0];
+    if (!file || voiceTarget === 'terminal' || voiceSendInFlight || voiceImagePreparing) return;
+    if (file.size > 25 * 1024 * 1024) {
+      voiceImageFile.value = '';
+      setVoiceImageStatus('Choose an image smaller than 25 MiB.', true);
+      return;
+    }
+    const generation = ++voiceImageGeneration;
+    const hostUrl = active.url;
+    const targetPane = voiceTarget;
+    let bitmap = null;
+    let canvas = null;
+    voiceImagePreparing = true;
+    setVoiceImageStatus('Preparing screenshot…');
+    updateVoiceControls();
+    try {
+      bitmap = await createImageBitmap(file);
+      if (generation !== voiceImageGeneration || active.url !== hostUrl || voiceTarget !== targetPane) return;
+      const dimensionScale = Math.min(1, 2560 / Math.max(bitmap.width, bitmap.height));
+      const pixelScale = Math.min(1, Math.sqrt(6_000_000 / (bitmap.width * bitmap.height)));
+      const scale = Math.min(dimensionScale, pixelScale);
+      const width = Math.max(1, Math.round(bitmap.width * scale));
+      const height = Math.max(1, Math.round(bitmap.height * scale));
+      canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext('2d', { alpha: false });
+      if (!context) throw new Error('Image conversion is unavailable.');
+      context.drawImage(bitmap, 0, 0, width, height);
+      const blob = await new Promise((resolve, reject) =>
+        canvas.toBlob((value) => value ? resolve(value) : reject(new Error('PNG conversion failed')), 'image/png')
+      );
+      if (generation !== voiceImageGeneration || active.url !== hostUrl || voiceTarget !== targetPane) return;
+      if (blob.size > 8 * 1024 * 1024) throw new Error('Normalized screenshot is larger than 8 MiB.');
+      if (voiceImageAttachment) URL.revokeObjectURL(voiceImageAttachment.previewUrl);
+      const previewUrl = URL.createObjectURL(blob);
+      voiceImageAttachment = { blob, previewUrl, width, height };
+      document.getElementById('voice-image').src = previewUrl;
+      document.getElementById('voice-image-details').textContent =
+        `${width}×${height} · ${Math.max(1, Math.ceil(blob.size / 1024))} KiB PNG`;
+      voiceImagePreview.classList.remove('hidden');
+      voiceImageFile.value = '';
+      setVoiceImageStatus('Screenshot ready to send.');
+    } catch (error) {
+      if (generation === voiceImageGeneration) {
+        setVoiceImageStatus(error.message || 'Could not read that image.', true);
+      }
+    } finally {
+      bitmap?.close();
+      if (canvas) {
+        canvas.width = 0;
+        canvas.height = 0;
+      }
+      if (generation === voiceImageGeneration) {
+        voiceImagePreparing = false;
+        voiceImageFile.value = '';
+        updateVoiceControls();
+      }
+    }
+  });
 
   document.getElementById('voice-paste').addEventListener('click', async () => {
     if (!navigator.clipboard?.readText) {

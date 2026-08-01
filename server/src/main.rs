@@ -2,6 +2,7 @@ mod agents;
 mod push;
 mod theme;
 mod update;
+mod uploads;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{
@@ -16,8 +17,9 @@ use std::{
 use anyhow::{Context, Result};
 use axum::{
     extract::{
+        multipart::MultipartError,
         ws::{Message, WebSocket},
-        Query, State, WebSocketUpgrade,
+        DefaultBodyLimit, FromRequest, Multipart, Query, Request, State, WebSocketUpgrade,
     },
     http::{header, HeaderMap, HeaderName, Method, StatusCode, Uri},
     response::{IntoResponse, Response},
@@ -28,7 +30,7 @@ use futures_util::{SinkExt, StreamExt};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use rust_embed::RustEmbed;
 use serde::Deserialize;
-use tokio::sync::{mpsc, watch, Notify};
+use tokio::sync::{mpsc, watch, Notify, Semaphore};
 use tower_http::cors::{Any, CorsLayer};
 use tracing::{error, info, warn};
 
@@ -46,6 +48,8 @@ struct AppState {
     sessions: SessionTracker,
     theme: theme::ThemeSource,
     updates: update::UpdateManager,
+    uploads: uploads::UploadStore,
+    image_jobs: Arc<Semaphore>,
 }
 
 #[derive(Clone, Default)]
@@ -281,6 +285,10 @@ async fn main() -> Result<()> {
     let sessions = SessionTracker::default();
     let theme = theme::ThemeSource::from_environment(&shell_cmd);
     let updates = update::UpdateManager::new()?;
+    let uploads = uploads::UploadStore::from_environment()?;
+    if let Err(error) = uploads.cleanup_expired() {
+        warn!("upload cleanup failed: {error:#}");
+    }
     let state = AppState {
         token: Arc::new(token),
         shell_cmd: Arc::new(shell_cmd),
@@ -290,9 +298,12 @@ async fn main() -> Result<()> {
         sessions: sessions.clone(),
         theme,
         updates: updates.clone(),
+        uploads: uploads.clone(),
+        image_jobs: Arc::new(Semaphore::new(1)),
     };
 
     let notifier_task = tokio::spawn(agents::notifier_loop(host, push_store, shutdown_rx));
+    let upload_cleanup_task = tokio::spawn(uploads.cleanup_loop(state.shutdown.clone()));
 
     // Other mushu instances' PWAs call /push/* and /api/* cross-origin;
     // auth still comes from the x-mushu-token header on every sensitive route.
@@ -312,6 +323,10 @@ async fn main() -> Result<()> {
         .route("/api/host", get(api_host))
         .route("/api/update", get(api_update).post(api_update_install))
         .route("/api/action", post(api_action))
+        .route(
+            "/api/prompt-image",
+            post(api_prompt_image).layer(DefaultBodyLimit::max(10 * 1024 * 1024)),
+        )
         .route("/push/vapid", get(push_vapid))
         .route("/push/subscribe", post(push_subscribe))
         .route("/push/unsubscribe", post(push_unsubscribe))
@@ -337,6 +352,9 @@ async fn main() -> Result<()> {
     let _ = shutdown_tx.send(true);
     sessions.wait_empty().await;
     notifier_task.await.context("notifier task failed")?;
+    upload_cleanup_task
+        .await
+        .context("upload cleanup task failed")?;
     server_result?;
     if updates.restart_requested() {
         reexec(updates.executable())?;
@@ -537,6 +555,207 @@ async fn api_action(
         Err(agents::ActionError::Failed(e)) => {
             error!("action failed: {e:#}");
             (StatusCode::INTERNAL_SERVER_ERROR, "action failed").into_response()
+        }
+    }
+}
+
+struct PromptImageRequest {
+    pane_id: String,
+    seq: u64,
+    text: String,
+    image: Vec<u8>,
+}
+
+async fn api_prompt_image(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    request: Request,
+) -> Response {
+    if !authed(&headers, &state) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+    let _image_job = match state.image_jobs.clone().try_acquire_owned() {
+        Ok(permit) => permit,
+        Err(_) => return (StatusCode::TOO_MANY_REQUESTS, "image processing busy").into_response(),
+    };
+    let mut multipart = match Multipart::from_request(request, &state).await {
+        Ok(multipart) => multipart,
+        Err(error) => return error.into_response(),
+    };
+    let request = match parse_prompt_image(&mut multipart).await {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    let normalized =
+        match tokio::task::spawn_blocking(move || uploads::normalize_png(&request.image)).await {
+            Ok(Ok(image)) => image,
+            Ok(Err("unsupported image type")) => {
+                return (StatusCode::UNSUPPORTED_MEDIA_TYPE, "unsupported image type")
+                    .into_response()
+            }
+            Ok(Err(message)) => return (StatusCode::BAD_REQUEST, message).into_response(),
+            Err(error) => {
+                error!("image validation task failed: {error}");
+                return (StatusCode::INTERNAL_SERVER_ERROR, "image validation failed")
+                    .into_response();
+            }
+        };
+
+    let agent = match agents::validate_prompt_target(&request.pane_id, request.seq).await {
+        Ok(agent) => agent,
+        Err(error) => return action_error_response(error),
+    };
+    let uploads = state.uploads.clone();
+    let size = normalized.png.len();
+    let png = normalized.png;
+    let upload = match tokio::task::spawn_blocking(move || {
+        if let Err(error) = uploads.cleanup_expired() {
+            warn!("upload cleanup failed: {error:#}");
+        }
+        uploads.store(&png)
+    })
+    .await
+    {
+        Ok(Ok(upload)) => upload,
+        Ok(Err(error)) => {
+            error!("image storage failed: {error:#}");
+            return (StatusCode::INTERNAL_SERVER_ERROR, "image storage failed").into_response();
+        }
+        Err(error) => {
+            error!("image storage task failed: {error}");
+            return (StatusCode::INTERNAL_SERVER_ERROR, "image storage failed").into_response();
+        }
+    };
+
+    let prompt = agents::image_prompt(&request.text, &upload.path);
+    let details = agents::ImageDetails {
+        width: normalized.width,
+        height: normalized.height,
+        size,
+    };
+    let result = agents::run_image_prompt(
+        &request.pane_id,
+        request.seq,
+        &agent,
+        &prompt,
+        &upload,
+        &details,
+    )
+    .await;
+    if result.is_err() {
+        match tokio::fs::remove_file(&upload.path).await {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => warn!("failed to remove rejected upload {}: {error}", upload.id),
+        }
+    }
+    match result {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => action_error_response(error),
+    }
+}
+
+async fn parse_prompt_image(multipart: &mut Multipart) -> Result<PromptImageRequest, Response> {
+    let mut pane_id = None;
+    let mut seq = None;
+    let mut text = None;
+    let mut image = None;
+    let mut fields = 0u8;
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(multipart_error_response)?
+    {
+        fields += 1;
+        if fields > 4 {
+            return Err((StatusCode::BAD_REQUEST, "too many fields").into_response());
+        }
+        let name = field.name().unwrap_or("").to_string();
+        match name.as_str() {
+            "pane_id" => {
+                if pane_id.is_some() {
+                    return Err((StatusCode::BAD_REQUEST, "duplicate pane_id").into_response());
+                }
+                let value = field.text().await.map_err(multipart_error_response)?;
+                if value.is_empty()
+                    || value.len() > 256
+                    || value.chars().any(|character| character.is_control())
+                {
+                    return Err((StatusCode::BAD_REQUEST, "invalid pane_id").into_response());
+                }
+                pane_id = Some(value);
+            }
+            "seq" => {
+                if seq.is_some() {
+                    return Err((StatusCode::BAD_REQUEST, "duplicate seq").into_response());
+                }
+                let value = field.text().await.map_err(multipart_error_response)?;
+                if value.len() > 20 {
+                    return Err((StatusCode::BAD_REQUEST, "invalid seq").into_response());
+                }
+                seq = Some(
+                    value
+                        .parse::<u64>()
+                        .map_err(|_| (StatusCode::BAD_REQUEST, "invalid seq").into_response())?,
+                );
+            }
+            "text" => {
+                if text.is_some() {
+                    return Err((StatusCode::BAD_REQUEST, "duplicate text").into_response());
+                }
+                let value = field.text().await.map_err(multipart_error_response)?;
+                if value.len() > 4096 {
+                    return Err((StatusCode::BAD_REQUEST, "text too long").into_response());
+                }
+                text = Some(value);
+            }
+            "image" => {
+                if image.is_some() {
+                    return Err(
+                        (StatusCode::BAD_REQUEST, "exactly one image is required").into_response()
+                    );
+                }
+                if field.content_type() != Some("image/png") {
+                    return Err(
+                        (StatusCode::UNSUPPORTED_MEDIA_TYPE, "image must be PNG").into_response()
+                    );
+                }
+                let bytes = field.bytes().await.map_err(multipart_error_response)?;
+                if bytes.len() > uploads::MAX_IMAGE_BYTES {
+                    return Err((StatusCode::PAYLOAD_TOO_LARGE, "image too large").into_response());
+                }
+                image = Some(bytes.to_vec());
+            }
+            _ => return Err((StatusCode::BAD_REQUEST, "unknown multipart field").into_response()),
+        }
+    }
+    Ok(PromptImageRequest {
+        pane_id: pane_id
+            .ok_or_else(|| (StatusCode::BAD_REQUEST, "pane_id is required").into_response())?,
+        seq: seq.ok_or_else(|| (StatusCode::BAD_REQUEST, "seq is required").into_response())?,
+        text: text.unwrap_or_default(),
+        image: image.ok_or_else(|| {
+            (StatusCode::BAD_REQUEST, "exactly one image is required").into_response()
+        })?,
+    })
+}
+
+fn multipart_error_response(error: MultipartError) -> Response {
+    if error.status() == StatusCode::PAYLOAD_TOO_LARGE {
+        (StatusCode::PAYLOAD_TOO_LARGE, "request too large").into_response()
+    } else {
+        (StatusCode::BAD_REQUEST, "invalid multipart request").into_response()
+    }
+}
+
+fn action_error_response(error: agents::ActionError) -> Response {
+    match error {
+        agents::ActionError::Gone => (StatusCode::NOT_FOUND, "agent gone").into_response(),
+        agents::ActionError::Stale => (StatusCode::CONFLICT, "agent state changed").into_response(),
+        agents::ActionError::Invalid(message) => (StatusCode::BAD_REQUEST, message).into_response(),
+        agents::ActionError::Failed(error) => {
+            error!("image prompt failed: {error:#}");
+            (StatusCode::INTERNAL_SERVER_ERROR, "image prompt failed").into_response()
         }
     }
 }

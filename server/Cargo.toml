@@ -8,7 +8,7 @@ build = "build.rs"
 
 [dependencies]
 anyhow = "1"
-axum = { version = "0.8", features = ["ws"] }
+axum = { version = "0.8", features = ["multipart", "ws"] }
 base64 = "0.22"
 futures-util = { version = "0.3", default-features = false, features = ["sink"] }
 p256 = "0.13"
@@ -28,6 +28,7 @@ qrcode = { version = "0.14", default-features = false }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 semver = "1"
 sha2 = "0.10"
+image = { version = "0.25", default-features = false, features = ["png"] }
 # Only present so `vendored-tls` can reach the openssl-sys that web-push pulls
 # in through native-tls; nothing in the source uses it directly.
 openssl = { version = "0.10", optional = true }
@@ -38,6 +39,9 @@ openssl = { version = "0.10", optional = true }
 # macOS build links an absolute Homebrew dylib path and a default Linux build
 # needs a matching system libssl. Local builds keep using the system library.
 vendored-tls = ["dep:openssl", "openssl/vendored"]
+
+[dev-dependencies]
+filetime = "0.2"
 
 [[bin]]
 name = "mushu-server"
