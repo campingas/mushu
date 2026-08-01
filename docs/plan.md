@@ -83,6 +83,8 @@ Goal: any Ghostty + Herdr user can reproduce this stack from the repo.
 
 Multi-host UX shipped ahead of this milestone on 2026-07-31 (D9-D10): one installed app drives every host from a single origin, with per-host alert toggles and an optional Face ID lock on stored tokens. Inbox grouping and priorities are deferred; with a handful of agents the existing chips are not the constraint.
 
+Per-host Herdr theme synchronization was implemented on 2026-08-01 (D12): every connection preflights the active host's normalized descriptor and applies an adapted palette to the PWA and xterm. The owner validated the dark Catppuccin palette in the installed iPhone PWA; light, custom, and multi-host theme changes remain owner-validation only.
+
 Steps:
 
 1. Pairing and honest docs (done 2026-07-31): `mushuctl pair` prints a QR that signs a phone in without typing a token (D11), and the docs now match the shipped app, including the shared VAPID keypair that multi-host alerts require.
