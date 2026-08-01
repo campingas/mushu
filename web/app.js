@@ -1,4 +1,4 @@
-/* global Terminal, FitAddon */
+/* global Terminal, FitAddon, jsQR */
 (async () => {
   let pendingAttentionTarget = null;
   let attentionTargetHandler = null;
@@ -1146,6 +1146,19 @@
   const settings = document.getElementById('settings');
   const instHeaders = (inst) => ({ 'content-type': 'application/json', 'x-mushu-token': inst.token });
   const subscriptionOps = new Map();
+  const updateViews = new Map();
+  const updateKeys = new WeakMap();
+  const updateRequests = new WeakMap();
+  let nextUpdateKey = 0;
+  let nextUpdateRequest = 0;
+
+  // Bootstrap Icons, inlined so the active Herdr palette can tint them.
+  const hddNetworkIcon = '<svg class="settings-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 5a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5M3 8.5h10a1.5 1.5 0 0 0 1.5-1.5V3A1.5 1.5 0 0 0 13 1.5H3A1.5 1.5 0 0 0 1.5 3v4A1.5 1.5 0 0 0 3 8.5M2.5 3A.5.5 0 0 1 3 2.5h10a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5H3a.5.5 0 0 1-.5-.5zM5 11.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 .5.5v1H13a.5.5 0 0 1 .5.5v1.5a.5.5 0 0 1-1 0v-1H11v1a.5.5 0 0 1-1 0v-2.5H6v2.5a.5.5 0 0 1-1 0v-1H3.5v1a.5.5 0 0 1-1 0V13a.5.5 0 0 1 .5-.5h2z"/></svg>';
+  const bellIcon = (on) => on
+    ? '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 16a2 2 0 0 0 1.985-1.75h-3.97A2 2 0 0 0 8 16m.104-14.997A1.5 1.5 0 0 0 6.5 2.5v.086A4.5 4.5 0 0 0 3.5 6.83V10l-1 2v1h11v-1l-1-2V6.83a4.5 4.5 0 0 0-3-4.244V2.5a1.5 1.5 0 0 0-1.396-1.497M4.5 10.236V6.83a3.5 3.5 0 1 1 7 0v3.406l.382.764H4.118z"/></svg>'
+    : '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.646 14.354 1.646 2.354l.708-.708 12 12zM8 16a2 2 0 0 0 1.985-1.75h-3.97A2 2 0 0 0 8 16M3.5 6.83V10l-1 2v1h8.086l-1-1H4.118l.382-.764V6.83c0-.623.163-1.208.448-1.714l-.73-.73A4.48 4.48 0 0 0 3.5 6.83m8 2.756 1 1V6.83a4.5 4.5 0 0 0-3-4.244V2.5a1.5 1.5 0 0 0-2.97-.299l.884.884A3.5 3.5 0 0 1 11.5 6.83z"/></svg>';
+  const faceIdIcon = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 1h-2a.5.5 0 0 0-.5.5v2a.5.5 0 0 1-1 0v-2A1.5 1.5 0 0 1 1.5 0h2a.5.5 0 0 1 0 1m9 0h2a.5.5 0 0 1 .5.5v2a.5.5 0 0 0 1 0v-2A1.5 1.5 0 0 0 14.5 0h-2a.5.5 0 0 0 0 1m-9 14h-2a.5.5 0 0 1-.5-.5v-2a.5.5 0 0 0-1 0v2A1.5 1.5 0 0 0 1.5 16h2a.5.5 0 0 0 0-1m9 0h2a.5.5 0 0 0 .5-.5v-2a.5.5 0 0 1 1 0v2a1.5 1.5 0 0 1-1.5 1.5h-2a.5.5 0 0 1 0-1M3 7.5a.5.5 0 0 1 .5-.5h.75a.5.5 0 0 1 0 1H3.5a.5.5 0 0 1-.5-.5m8.75-.5h.75a.5.5 0 0 1 0 1h-.75a.5.5 0 0 1 0-1M8 4.5a.5.5 0 0 1 .5.5v3.5H9a.5.5 0 0 1 0 1H8A.5.5 0 0 1 7.5 9V5a.5.5 0 0 1 .5-.5m-2.5 6.75a.5.5 0 0 1 .7.1c.38.506.978.9 1.8.9s1.42-.394 1.8-.9a.5.5 0 1 1 .8.6c-.62.827-1.58 1.3-2.6 1.3s-1.98-.473-2.6-1.3a.5.5 0 0 1 .1-.7"/></svg>';
+  document.getElementById('face-icon').innerHTML = faceIdIcon;
 
   async function withSubscriptionOp(inst, operation) {
     const previous = subscriptionOps.get(inst.url) || Promise.resolve();
@@ -1217,12 +1230,17 @@
     document.getElementById('instance-list').innerHTML = instances
       .map((inst, i) => {
         const home = inst.url === location.origin;
+        const updateKey = keyForUpdate(inst);
         return (
-          `<div class="ws inst ${inst === active ? 'focused' : ''}">` +
-          `<span class="label">${esc(shortHost(inst.url))}</span>` +
-          `<span class="t">${esc(new URL(inst.url).host)}</span>` +
-          `<button class="alert" data-alert="${i}">&#8230;</button>` +
-          (home ? '' : `<button class="rm" data-rm="${i}">&#10005;</button>`) +
+          `<div class="host-card ${inst === active ? 'active' : ''}">` + hddNetworkIcon +
+          `<div class="host-copy"><div class="host-name">${esc(shortHost(inst.url))}</div>` +
+          `<div class="host-url">${esc(new URL(inst.url).host)}</div>` +
+          `<div class="host-version" data-update-status="${updateKey}">checking version…</div></div>` +
+          `<div class="host-controls">` +
+          `<button class="alert" data-alert="${i}" aria-label="Checking alerts">…</button>` +
+          `<button class="update" data-update="${i}" data-update-key="${updateKey}" disabled aria-label="Checking ${esc(shortHost(inst.url))} for updates">checking…</button>` +
+          (home ? '' : `<button class="rm" data-rm="${i}" aria-label="Remove host">&#10005;</button>`) +
+          `</div>` +
           `</div>`
         );
       })
@@ -1230,22 +1248,32 @@
     const sub = await localSubscription();
     await Promise.all(
       instances.map(async (inst, i) => {
-        const btn = document.querySelector(`[data-alert="${i}"]`);
-        if (!btn) return;
-        if (!sub) return setAlertBtn(btn, false);
-        try {
-          const { response: res, subscribed } = await refreshEnabledSubscription(inst, sub);
-          if (!res.ok) return void (btn.textContent = res.status === 401 ? 'bad token' : `err ${res.status}`);
-          setAlertBtn(btn, subscribed);
-        } catch (_) {
-          btn.textContent = 'offline';
-        }
+        await Promise.all([
+          loadUpdate(inst, false),
+          (async () => {
+            const btn = document.querySelector(`[data-alert="${i}"]`);
+            if (!btn) return;
+            if (!sub) return setAlertBtn(btn, false);
+            try {
+              const { response: res, subscribed } = await refreshEnabledSubscription(inst, sub);
+              if (!res.ok) {
+                btn.textContent = res.status === 401 ? 'bad token' : `err ${res.status}`;
+                return;
+              }
+              setAlertBtn(btn, subscribed);
+            } catch (_) {
+              btn.textContent = 'offline';
+            }
+          })(),
+        ]);
       })
     );
   }
 
   function setAlertBtn(btn, on) {
-    btn.textContent = on ? 'alerts on' : 'alerts off';
+    btn.innerHTML = bellIcon(on);
+    btn.title = on ? 'Disable alerts' : 'Enable alerts';
+    btn.setAttribute('aria-label', btn.title);
     btn.classList.toggle('on', on);
   }
 
@@ -1274,38 +1302,361 @@
     renderInstances();
   }
 
-  async function addInstance() {
-    const urlInput = document.getElementById('inst-url');
-    const tokenInput = document.getElementById('inst-token');
-    let url = urlInput.value.trim();
-    const instToken = tokenInput.value.trim();
-    if (!url) return;
-    if (!/^https?:/.test(url)) url = 'https://' + url;
-    try {
-      url = new URL(url).origin;
-    } catch (_) {
-      return setStatus('invalid url', false);
+  function keyForUpdate(inst) {
+    if (!updateKeys.has(inst)) updateKeys.set(inst, ++nextUpdateKey);
+    return updateKeys.get(inst);
+  }
+
+  function updateElements(inst) {
+    const key = keyForUpdate(inst);
+    return {
+      status: document.querySelector(`[data-update-status="${key}"]`),
+      button: document.querySelector(`[data-update-key="${key}"]`),
+    };
+  }
+
+  function setUpdateButton(button, text, disabled, label) {
+    button.textContent = text;
+    button.disabled = disabled;
+    button.setAttribute('aria-label', label);
+  }
+
+  async function loadUpdate(inst, refresh) {
+    const request = ++nextUpdateRequest;
+    updateRequests.set(inst, request);
+    let { status, button } = updateElements(inst);
+    if (status && button) {
+      status.textContent = 'checking for updates…';
+      delete button.dataset.refreshOnly;
+      setUpdateButton(button, 'checking…', true, `Checking ${shortHost(inst.url)} for updates`);
     }
-    if (instances.some((i) => i.url === url)) return setStatus('already saved', false);
     try {
-      const res = await fetch(url + '/api/agents', { headers: { 'x-mushu-token': instToken } });
-      if (res.status === 401) return setStatus('bad token for that instance', false);
-      if (!res.ok) return setStatus(`instance error (${res.status})`, false);
-      const { key } = await (await fetch(url + '/push/vapid')).json();
-      const { key: localKey } = await (await fetch('/push/vapid')).json();
-      if (key !== localKey) {
-        setStatus('added, but VAPID keys differ: its alerts cannot reach this app', false);
+      const res = await fetch(inst.url + `/api/update${refresh ? '?refresh=true' : ''}`, {
+        headers: { 'x-mushu-token': inst.token || '' },
+      });
+      if (!res.ok) throw new Error(res.status === 404 ? 'updates require a newer Mushu' : `check failed (${res.status})`);
+      const view = await res.json();
+      if (updateRequests.get(inst) !== request || !instances.includes(inst)) return { ok: true, superseded: true };
+      ({ status, button } = updateElements(inst));
+      if (!status || !button) return { ok: true, superseded: true };
+      updateViews.set(inst.url, view);
+      delete button.dataset.refreshOnly;
+      status.textContent = `${view.build.tag} · ${view.build.sha.slice(0, 8)} · ${view.build.kind}`;
+      if (view.state === 'installing' || view.state === 'restarting') {
+        const action = view.state === 'installing' ? 'installing…' : 'restarting…';
+        setUpdateButton(button, action, true, `${shortHost(inst.url)} is ${view.state}`);
+      } else if (view.state === 'failed') {
+        button.dataset.refreshOnly = 'true';
+        status.textContent += ` · update failed: ${view.error}`;
+        setUpdateButton(button, 'retry check', false, `Retry update check for ${shortHost(inst.url)}`);
+        return { ok: false, error: view.error || 'host update failed' };
+      } else if (!view.latest) {
+        button.dataset.refreshOnly = 'true';
+        status.textContent += ` · ${view.check_error || 'release check unavailable'}`;
+        setUpdateButton(button, 'retry check', false, `Retry update check for ${shortHost(inst.url)}`);
+        return { ok: false, error: view.check_error || 'release check unavailable' };
+      } else if (view.update_available && view.install_allowed) {
+        setUpdateButton(button, `install ${view.latest.tag}`, false, `Install ${view.latest.tag} on ${shortHost(inst.url)}`);
       } else {
-        setStatus(`${shortHost(url)} added`, true);
+        if (view.reason) status.textContent += ` · ${view.reason}`;
+        setUpdateButton(
+          button,
+          view.reason ? 'dev build' : 'up to date',
+          true,
+          view.reason ? `${shortHost(inst.url)} is a development build` : `${shortHost(inst.url)} is up to date`
+        );
       }
-    } catch (_) {
-      return setStatus('instance unreachable', false);
+      return { ok: true };
+    } catch (error) {
+      if (updateRequests.get(inst) !== request || !instances.includes(inst)) return { ok: true, superseded: true };
+      updateViews.delete(inst.url);
+      ({ status, button } = updateElements(inst));
+      const message = error instanceof TypeError ? 'host unreachable' : error.message || 'update check failed';
+      if (status && button) {
+        status.textContent = `update check failed · ${message}`;
+        button.dataset.refreshOnly = 'true';
+        setUpdateButton(button, 'retry check', false, `Retry update check for ${shortHost(inst.url)}`);
+      }
+      return { ok: false, error: message };
     }
-    instances.push({ url, token: instToken });
-    saveInstances();
-    urlInput.value = '';
-    tokenInput.value = '';
-    renderInstances();
+  }
+
+  // --- QR-only host pairing ---
+
+  const pairing = document.getElementById('pairing');
+  const pairVideo = document.getElementById('pair-video');
+  const pairCanvas = document.getElementById('pair-canvas');
+  const pairMessage = document.getElementById('pair-message');
+  const pairFile = document.getElementById('pair-file');
+  let pairStream = null;
+  let pairFrame = null;
+  let pairGeneration = 0;
+  let pairValidationController = null;
+
+  function invalidatePairAttempt() {
+    pairGeneration += 1;
+    pairValidationController?.abort();
+    pairValidationController = null;
+  }
+
+  function stopPairCamera() {
+    cancelAnimationFrame(pairFrame);
+    pairFrame = null;
+    pairStream?.getTracks().forEach((track) => track.stop());
+    pairStream = null;
+    pairVideo.srcObject = null;
+    pairVideo.classList.add('hidden');
+  }
+
+  function clearPairState(close = false) {
+    invalidatePairAttempt();
+    stopPairCamera();
+    pairFile.value = '';
+    pairCanvas.width = 0;
+    pairCanvas.height = 0;
+    if (close) pairing.classList.add('hidden');
+  }
+
+  function parsePairingUrl(value) {
+    const candidate = new URL(String(value).trim());
+    if (candidate.protocol !== 'https:' || candidate.username || candidate.password || candidate.search) {
+      throw new Error('pairing QR must be a standard HTTPS Mushu URL');
+    }
+    const secret = decodeURIComponent(candidate.hash.slice(1));
+    if (secret.length < 16 || secret.length > 512 || /[\s#]/.test(secret)) {
+      throw new Error('pairing QR has an invalid token');
+    }
+    return { url: candidate.origin, token: secret };
+  }
+
+  async function validatePairing(decoded) {
+    invalidatePairAttempt();
+    const generation = pairGeneration;
+    const controller = new AbortController();
+    pairValidationController = controller;
+    try {
+      const candidate = parsePairingUrl(decoded);
+      stopPairCamera();
+      pairMessage.textContent = `Checking ${shortHost(candidate.url)}…`;
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      let hostResponse;
+      let remoteVapid;
+      let localVapid;
+      try {
+        [hostResponse, remoteVapid, localVapid] = await Promise.all([
+          fetch(candidate.url + '/api/host', {
+            headers: { 'x-mushu-token': candidate.token },
+            signal: controller.signal,
+          }),
+          fetch(candidate.url + '/push/vapid', { signal: controller.signal }),
+          fetch('/push/vapid', { signal: controller.signal }),
+        ]);
+      } finally {
+        clearTimeout(timeout);
+      }
+      if (hostResponse.status === 401) throw new Error('the QR token was rejected');
+      if (!hostResponse.ok || !remoteVapid.ok || !localVapid.ok) throw new Error('host validation failed');
+      await hostResponse.json();
+      const remoteKey = (await remoteVapid.json()).key;
+      const localKey = (await localVapid.json()).key;
+      if (!remoteKey || remoteKey !== localKey) {
+        throw new Error('host VAPID key differs; copy the shared key before pairing');
+      }
+      if (generation !== pairGeneration || controller.signal.aborted) return;
+
+      const existing = instances.find((inst) => inst.url === candidate.url);
+      if (existing) existing.token = candidate.token;
+      else instances.push({ url: candidate.url, token: candidate.token });
+      saveInstances();
+      const pairedHost = shortHost(candidate.url);
+      clearPairState(true);
+      setStatus(`${pairedHost} paired`, true);
+      renderInstances();
+    } catch (error) {
+      if (generation !== pairGeneration) return;
+      clearPairState(false);
+      pairMessage.textContent = error.name === 'AbortError'
+        ? 'host check timed out; try again'
+        : error.message || 'QR pairing failed';
+    } finally {
+      if (pairValidationController === controller) pairValidationController = null;
+    }
+  }
+
+  function scanPairFrame(generation) {
+    if (generation !== pairGeneration || !pairStream) return;
+    if (pairVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      pairCanvas.width = pairVideo.videoWidth;
+      pairCanvas.height = pairVideo.videoHeight;
+      const context = pairCanvas.getContext('2d', { willReadFrequently: true });
+      context.drawImage(pairVideo, 0, 0);
+      const image = context.getImageData(0, 0, pairCanvas.width, pairCanvas.height);
+      const result = jsQR(image.data, image.width, image.height);
+      if (result?.data) {
+        validatePairing(result.data);
+        return;
+      }
+    }
+    pairFrame = requestAnimationFrame(() => scanPairFrame(generation));
+  }
+
+  async function startPairCamera() {
+    clearPairState(false);
+    const generation = pairGeneration;
+    pairing.classList.remove('hidden');
+    pairMessage.textContent = 'Point the rear camera at the QR from mushuctl pair.';
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false,
+      });
+      if (generation !== pairGeneration) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      pairStream = stream;
+      pairVideo.srcObject = pairStream;
+      pairVideo.classList.remove('hidden');
+      await pairVideo.play();
+      if (generation !== pairGeneration) {
+        stopPairCamera();
+        return;
+      }
+      scanPairFrame(generation);
+    } catch (error) {
+      if (generation !== pairGeneration) return;
+      clearPairState(false);
+      pairMessage.textContent = 'Camera unavailable. Choose a saved QR image instead.';
+    }
+  }
+
+  pairFile.addEventListener('change', async () => {
+    const file = pairFile.files?.[0];
+    if (!file) return;
+    clearPairState(false);
+    const generation = pairGeneration;
+    try {
+      const bitmap = await createImageBitmap(file);
+      if (generation !== pairGeneration) {
+        bitmap.close();
+        return;
+      }
+      const scale = Math.min(1, 2048 / Math.max(bitmap.width, bitmap.height));
+      pairCanvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      pairCanvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      const context = pairCanvas.getContext('2d', { willReadFrequently: true });
+      context.drawImage(bitmap, 0, 0, pairCanvas.width, pairCanvas.height);
+      bitmap.close();
+      const image = context.getImageData(0, 0, pairCanvas.width, pairCanvas.height);
+      const result = jsQR(image.data, image.width, image.height);
+      if (!result?.data) throw new Error('no QR code found in that image');
+      await validatePairing(result.data);
+    } catch (error) {
+      if (generation !== pairGeneration) return;
+      clearPairState(false);
+      pairMessage.textContent = error.message || 'could not read that image';
+    }
+  });
+
+  // --- explicit latest-stable host updates ---
+
+  let updatePending = null;
+  let globalUpdateCheck = null;
+
+  function checkAllUpdates() {
+    if (globalUpdateCheck) return globalUpdateCheck;
+    const button = document.getElementById('update-refresh');
+    const summary = document.getElementById('update-summary');
+    const targets = [...instances];
+    button.disabled = true;
+    button.textContent = 'checking…';
+    button.classList.remove('success', 'error');
+    button.setAttribute('aria-label', `Checking ${targets.length} host${targets.length === 1 ? '' : 's'} for updates`);
+    summary.textContent = targets.length ? `0/${targets.length}` : 'no hosts';
+
+    globalUpdateCheck = (async () => {
+      let completed = 0;
+      const results = await Promise.all(
+        targets.map(async (inst) => {
+          const result = await loadUpdate(inst, true);
+          completed += 1;
+          summary.textContent = `${completed}/${targets.length}`;
+          return result;
+        })
+      );
+      const failures = results.filter((result) => !result.ok).length;
+      if (failures) {
+        button.textContent = 'check again';
+        button.classList.add('error');
+        button.setAttribute('aria-label', `Check all hosts again; ${failures} update check${failures === 1 ? '' : 's'} failed`);
+        summary.textContent = `${failures} failed`;
+      } else {
+        button.textContent = 'check again';
+        button.classList.add('success');
+        button.setAttribute('aria-label', 'Check all hosts for updates again; last check completed');
+        summary.textContent = targets.length ? 'check complete' : 'no hosts';
+      }
+    })().finally(() => {
+      button.disabled = false;
+      globalUpdateCheck = null;
+    });
+    return globalUpdateCheck;
+  }
+
+  async function confirmUpdate(i) {
+    const inst = instances[i];
+    const view = updateViews.get(inst?.url);
+    if (!inst || !view?.install_allowed || !view.update_available) return;
+    try {
+      if (vaultKey) {
+        setStatus('confirm identity to continue', false);
+        vaultKey = await prfKey(vaultCredId);
+      }
+      updatePending = { inst, tag: view.latest.tag };
+      document.getElementById('update-confirm-copy').textContent =
+        `${shortHost(inst.url)} will update from ${view.build.tag} to ${view.latest.tag}, restart, and reconnect.`;
+      document.getElementById('update-confirm').classList.remove('hidden');
+    } catch (_) {
+      setStatus('identity confirmation failed', false);
+    }
+  }
+
+  async function monitorUpdate(inst, tag) {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      try {
+        const host = await fetch(inst.url + '/api/host', {
+          headers: { 'x-mushu-token': inst.token || '' },
+        });
+        if (host.ok && (await host.json()).build?.tag === tag) {
+          setStatus(`${shortHost(inst.url)} updated to ${tag}`, true);
+          const i = instances.indexOf(inst);
+          if (i >= 0) await loadUpdate(inst, true);
+          return;
+        }
+        if (attempt % 4 === 3) {
+          const check = await fetch(inst.url + '/api/update', {
+            headers: { 'x-mushu-token': inst.token || '' },
+          });
+          if (check.ok) {
+            const view = await check.json();
+            if (view.state === 'failed') {
+              const failure = new Error(view.error || 'host update failed');
+              failure.updateFailure = true;
+              throw failure;
+            }
+          }
+        }
+      } catch (error) {
+        if (error.updateFailure) {
+          setStatus(error.message, false);
+          const i = instances.indexOf(inst);
+          if (i >= 0) await loadUpdate(inst, false);
+          return;
+        }
+      }
+    }
+    setStatus(`${shortHost(inst.url)} update status timed out`, false);
   }
 
   document.getElementById('settings-btn').addEventListener('click', () => {
@@ -1314,9 +1665,15 @@
     syncLockToggle();
   });
   document.getElementById('settings-close').addEventListener('click', () => {
+    clearPairState(true);
+    document.getElementById('update-confirm').classList.add('hidden');
+    updatePending = null;
     settings.classList.add('hidden');
   });
-  document.getElementById('inst-add').addEventListener('click', addInstance);
+  document.getElementById('pair-open').addEventListener('click', startPairCamera);
+  document.getElementById('pair-camera').addEventListener('click', startPairCamera);
+  document.getElementById('pair-close').addEventListener('click', () => clearPairState(true));
+  document.getElementById('update-refresh').addEventListener('click', checkAllUpdates);
   document.getElementById('instance-list').addEventListener('click', (ev) => {
     const alertBtn = ev.target.closest('button.alert');
     if (alertBtn) {
@@ -1329,6 +1686,41 @@
       if (removed === active) setActive(location.origin);
       saveInstances();
       renderInstances();
+      return;
+    }
+    const updateBtn = ev.target.closest('button.update');
+    if (updateBtn && !updateBtn.disabled) {
+      const i = Number(updateBtn.dataset.update);
+      if (updateBtn.dataset.refreshOnly) return loadUpdate(instances[i], true);
+      return confirmUpdate(i);
+    }
+  });
+  document.getElementById('update-cancel').addEventListener('click', () => {
+    updatePending = null;
+    document.getElementById('update-confirm').classList.add('hidden');
+  });
+  document.getElementById('update-install').addEventListener('click', async () => {
+    const pending = updatePending;
+    if (!pending) return;
+    const button = document.getElementById('update-install');
+    button.disabled = true;
+    try {
+      const res = await fetch(pending.inst.url + '/api/update', {
+        method: 'POST',
+        headers: instHeaders(pending.inst),
+        body: JSON.stringify({ tag: pending.tag }),
+      });
+      if (res.status !== 202) throw new Error((await res.text()) || `update refused (${res.status})`);
+      document.getElementById('update-confirm').classList.add('hidden');
+      updatePending = null;
+      setStatus(`${shortHost(pending.inst.url)} is installing ${pending.tag}`, true);
+      const i = instances.indexOf(pending.inst);
+      if (i >= 0) await loadUpdate(pending.inst, false);
+      monitorUpdate(pending.inst, pending.tag);
+    } catch (error) {
+      setStatus(error.message || 'update request failed', false);
+    } finally {
+      button.disabled = false;
     }
   });
 

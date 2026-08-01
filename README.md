@@ -14,7 +14,8 @@
 - Push notifications when an agent needs input or finishes, end-to-end encrypted.
 - One-tap approve/deny, quick keys, or a full prompt, stale-guarded and audit-logged.
 - All your machines in one app: switch hosts from the drawer, alerts on or off per host.
-- Sign in by scanning a QR code; optionally lock your tokens behind Face ID.
+- Sign in and pair more hosts by scanning QR codes; optionally lock your tokens behind Face ID.
+- Install the latest stable Mushu release on each host from Settings, with checksum and staged-binary verification before restart.
 - Private by construction: loopback bind, published tailnet-only via Tailscale Serve. No sshd, no app store, no third-party relay.
 
 ## Install
@@ -80,7 +81,7 @@ Then open the cog and turn on alerts to enable push notifications (iOS 16.4+, re
 
 ## More than one host
 
-Run mushu-server on each host, then add the others from the cog panel: paste the second host's URL and its token (`mushuctl pair` prints both). Saved hosts appear under **hosts** in the drawer, and tapping one switches the terminal and inbox to it without leaving the app. Each host has its own alerts on/off toggle.
+Run mushu-server on each host, then run `mushuctl pair` on the additional host and open the cog in the installed app. Tap **Pair another host** and either scan that QR with the rear camera or choose an image containing it. The app accepts only an HTTPS Mushu pairing URL with the token in its fragment, authenticates `/api/host`, and requires the host to share this app's VAPID key before saving it. Saved hosts appear under **hosts** in the drawer, and tapping one switches the terminal and inbox without leaving the app. Each host has its own alerts toggle.
 
 Push notifications from a second host need one extra step, because a browser holds a single push subscription tied to one VAPID key. Give every host the same keypair:
 
@@ -90,9 +91,17 @@ ssh otherhost 'rm -f ~/.config/mushu/subscriptions.json'   # old subs used the r
 ssh otherhost 'systemctl --user restart mushu.service'
 ```
 
-Skip this and the second host's alerts will silently never arrive. Re-enable its alerts from the cog panel afterwards.
+Do this before in-app pairing. A host with a different VAPID key is refused because its alerts cannot reach this installed app.
 
 Optionally tap **enable face id lock**: your host tokens are then encrypted at rest with AES-GCM under a passkey held in the Secure Enclave, and opening the app asks for Face ID.
+
+## Update a host
+
+Settings shows the tag, commit SHA prefix, and build kind reported by every host. Tap **check updates**, then **install v…** to install the current latest stable release from `campingas/mushu`. A Face ID-enabled app re-authenticates before showing the host/current/latest confirmation; an app without the vault still requires the same explicit confirmation.
+
+The host re-checks GitHub's latest stable release when the install request arrives. It will not accept a prerelease, version picker, downgrade, stale tag, concurrent job, alternate repository, or arbitrary download URL. The matching platform binary and `SHA256SUMS` are downloaded over bounded HTTPS, the exact checksum and staged `--version` identity are verified, and only then is the executable atomically replaced. The old executable remains beside it as `mushu-server.previous`; the daemon closes sessions cleanly, re-execs itself, and the PWA reconnects. Failed checks leave the running executable untouched.
+
+Source and workflow builds identify themselves with `mushu-server --version`. Only binaries produced from a `v*` release tag have the `stable` build kind and may self-update; ordinary local and workflow-dispatch builds are deliberately `dev`.
 
 ## Screenshots
 
@@ -125,3 +134,5 @@ Inspired by [t3code](https://github.com/pingdotgg/t3code)'s control-surface shap
 
 GPLv3. Free software stays free: use it, ship it, but keep it open.
 _Others sell this experience behind paywalls and closed code; mushu does it fully open source._
+
+The vendored `web/vendor/jsQR.js` decoder is jsQR 1.4.0 under Apache-2.0; its complete notice is in `web/vendor/jsQR.LICENSE.txt`.

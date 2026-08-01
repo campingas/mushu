@@ -10,6 +10,7 @@ Start with [docs/development.md](docs/development.md) for the local loop and how
 server/src/main.rs   routing, token auth, WebSocket terminal, static assets, `pair`
 server/src/agents.rs Herdr snapshots, actions, the push notifier loop
 server/src/push.rs   VAPID keypair, subscription store, Web Push sending
+server/src/update.rs fixed-repository stable release checks and safe self-replacement
 web/                 the PWA (index.html, app.js, style.css, sw.js, vendored xterm.js)
 scripts/mushuctl     service control and phone pairing
 services/            launchd and systemd unit templates

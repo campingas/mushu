@@ -97,3 +97,13 @@ Why: `state_change_seq` can change while an agent remains blocked, and brief sta
 Choice safety: the action card treats a prompt as multiple choice only when a contiguous block of 2-9 numbered options starts at 1 near the bottom of the detection text. Anything ambiguous gets only Open terminal, Deny/Esc, and Approve/Enter; a detected choice prompt gets its explicit numbered options plus Open terminal and Deny/Esc, with no generic approval button.
 
 Alternatives rejected: terminal context in Web Push (unnecessary lock-screen disclosure), direct notification action buttons (not consistently available for installed iOS PWAs), navigating to another host origin (breaks the single-origin installed-app invariant in D9), and trusting the sequence from the notification without refreshing current state (racy and replay-prone).
+
+## D14: Hosts update only to the revalidated latest stable release
+
+Decision: a tagged stable Mushu binary may update itself only to a newer plain-semver release returned by GitHub's fixed `campingas/mushu` latest-release endpoint. Settings can refresh the check and request that exact tag, but the daemon independently repeats the latest-stable check before starting and never accepts a repository, URL, asset, or version chosen by the client.
+
+Why: a phone-friendly self-update path is useful only if it does not turn an authenticated PWA bug into an arbitrary executable downloader. Release binaries embed tag, commit SHA, and `stable` kind; local and workflow-dispatch builds are `dev` and refuse installation. One atomic job downloads the exact platform asset and checksum manifest with bounds, verifies both checksum and staged `--version`, fsyncs, preserves `.previous`, replaces the executable by same-directory rename, then uses the existing shutdown watch and re-exec path so WebSockets reconnect normally.
+
+Confirmation: installs never start from a background check. Every update needs an explicit themed host/current/latest confirmation, and a vault-enabled app obtains a fresh platform passkey PRF result before showing it.
+
+Alternatives rejected: prerelease or historical version selection (wider downgrade and compatibility surface), arbitrary release URLs or forks (turns the daemon into a remote code installer), automatic background installation (surprising host mutation), signed attestations beyond published SHA-256 checksums (future hardening, not required for this release), and automatic runtime rollback (service-manager and health-policy work outside this update boundary).

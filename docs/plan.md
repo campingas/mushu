@@ -89,12 +89,15 @@ Multi-host UX shipped ahead of this milestone on 2026-07-31 (D9-D10): one instal
 
 Per-host Herdr theme synchronization was implemented on 2026-08-01 (D12): every connection preflights the active host's normalized descriptor and applies an adapted palette to the PWA and xterm. The owner validated the dark Catppuccin palette in the installed iPhone PWA; light, custom, and multi-host theme changes remain owner-validation only.
 
+Full-screen Settings, QR-only in-app host pairing, and explicit latest-stable host updates were implemented on 2026-08-01 (D14). Terminal and desktop-browser checks cover authenticated refusal paths, release metadata, QR panel fallback, and responsive layout; rear-camera/photo pairing, Face ID re-authentication, and a real host replacement/reconnect remain owner-validation only.
+
 Steps:
 
 1. Pairing and honest docs (done 2026-07-31): `mushuctl pair` prints a QR that signs a phone in without typing a token (D11), and the docs now match the shipped app, including the shared VAPID keypair that multi-host alerts require.
 2. Release story (done 2026-07-31): prebuilt binaries for macOS and Linux on both architectures published by a tagged release, `install.sh` for one-line setup, and CI running fmt, clippy, and `cargo test` on every push. Installing no longer requires a Rust toolchain.
-3. Quiet hours: a time window in the notifier loop, so a finished agent does not wake you at 3am.
-4. Honest limitations doc versus commercial alternatives (image paste, Live Activities out of scope without a native app) and versus t3code.
+3. Host management and updates: full safe-area Settings; QR-only additional-host pairing with VAPID validation; per-host build identity and manual latest-stable update with revalidation, checksum/staged-binary verification, atomic replacement, `.previous`, clean shutdown, and re-exec (D14).
+4. Quiet hours: a time window in the notifier loop, so a finished agent does not wake you at 3am.
+5. Honest limitations doc versus commercial alternatives (image paste, Live Activities out of scope without a native app) and versus t3code.
 
 Acceptance criteria:
 
