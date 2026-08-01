@@ -1239,7 +1239,7 @@
           `<div class="host-controls">` +
           `<button class="alert" data-alert="${i}" aria-label="Checking alerts">…</button>` +
           `<button class="update" data-update="${i}" data-update-key="${updateKey}" disabled aria-label="Checking ${esc(shortHost(inst.url))} for updates">checking…</button>` +
-          (home ? '' : `<button class="rm" data-rm="${i}" aria-label="Remove host">&#10005;</button>`) +
+          (home ? '' : `<button class="rm" data-rm="${i}" aria-label="Remove ${esc(shortHost(inst.url))} host">&#10005;</button>`) +
           `</div>` +
           `</div>`
         );
@@ -1682,7 +1682,10 @@
     }
     const rmBtn = ev.target.closest('button.rm');
     if (rmBtn) {
-      const [removed] = instances.splice(Number(rmBtn.dataset.rm), 1);
+      const i = Number(rmBtn.dataset.rm);
+      const inst = instances[i];
+      if (!inst || !confirm(`Remove ${shortHost(inst.url)}?\n\nYou must pair this host again to add it back.`)) return;
+      const [removed] = instances.splice(i, 1);
       if (removed === active) setActive(location.origin);
       saveInstances();
       renderInstances();

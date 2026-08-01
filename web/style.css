@@ -593,8 +593,7 @@ body {
 }
 
 .host-card.active {
-  background: hsl(var(--host-h, 210) 45% 20%);
-  border-color: hsl(var(--host-h, 210) 60% 45%);
+  border-color: var(--green);
 }
 
 .settings-icon {
