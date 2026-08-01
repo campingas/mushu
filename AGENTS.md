@@ -13,6 +13,8 @@ server/src/push.rs   VAPID keypair, subscription store, Web Push sending
 server/src/update.rs fixed-repository stable release checks and safe self-replacement
 web/                 the PWA (index.html, app.js, style.css, sw.js, vendored xterm.js)
 scripts/mushuctl     service control and phone pairing
+scripts/visual       pinned-container visual baseline checks and updates
+tests/visual/        anonymous Playwright fixtures for the screenshot gallery
 services/            launchd and systemd unit templates
 docs/                architecture, decisions, plan, tasks, development, mushuctl
 ```
@@ -32,6 +34,7 @@ Each of these has cost real debugging time. Do not "clean them up" without readi
 - **The client never navigates cross-origin.** Switching hosts swaps the WebSocket and API base URL in place (D9); navigating between origins inside an installed iOS app opens the in-app browser and breaks the layout.
 - **Theme discovery happens before every terminal socket.** Keep `/api/host` authenticated, timeout-bounded, epoch-guarded, and limited to a normalized descriptor; never expose raw Herdr config or paths (D12).
 - **iOS terminal dismissal suppresses xterm's compatibility `mousedown` before blurring.** Delayed blur refocuses the terminal; keep the capture-phase, touch-only guard and toolbar visual-viewport placement described in [development.md](docs/development.md#mobile-terminal-controls).
+- **Visual baselines come only from the pinned container.** Use `bun run visual:check` or `bun run visual:update`; keep fixtures anonymous and test-only, never add a production demo mode or accept macOS-generated replacement pixels (see [development.md](docs/development.md#visual-regression-gallery)).
 
 ## Rules
 

@@ -1,0 +1,44 @@
+name: Visual regression
+
+on:
+  push:
+    paths:
+      - 'web/**'
+      - 'tests/visual/**'
+      - 'output/playwright/mushu-gallery/**'
+      - 'scripts/visual'
+      - 'package.json'
+      - 'bun.lock'
+      - 'playwright.config.ts'
+      - '.github/workflows/visual.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - 'tests/visual/**'
+      - 'output/playwright/mushu-gallery/**'
+      - 'scripts/visual'
+      - 'package.json'
+      - 'bun.lock'
+      - 'playwright.config.ts'
+      - '.github/workflows/visual.yml'
+
+jobs:
+  gallery:
+    runs-on: ubuntu-latest
+    container: mcr.microsoft.com/playwright:v1.62.0-noble
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - run: bun run visual:ci
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mushu-visual-diffs
+          path: |
+            test-results/visual/
+            test-results/visual-report/
+          if-no-files-found: ignore

@@ -8,7 +8,7 @@
 
 ## Features
 
-- Real terminal on your phone, attached to the exact same Herdr session as your desktop.
+- Real terminal on your phone, attached to the exact same Herdr session as your desktop (theme included).
 - Installable PWA with a touch toolbar; sessions survive network switches and phone sleep.
 - Agent inbox: live status chips for every agent (working, blocked, done, idle).
 - Push notifications when an agent needs input or finishes, end-to-end encrypted.
@@ -105,13 +105,19 @@ Source and workflow builds identify themselves with `mushu-server --version`. On
 
 ## Screenshots
 
-| Permission prompt | Check and steer agents |
+These anonymous Chromium baselines are generated from the real PWA assets by the visual regression suite; they are product views, not iOS or Web Push delivery validation.
+
+| Terminal agent chat | Two-host drawer |
 |---|---|
-| ![Agent approval prompt](output/playwright/mushu-mobile-demo/mushu-agent-accept.png) | ![Workspaces and agent inbox](output/playwright/mushu-mobile-demo/mushu-workspaces-tabs.png) |
+| ![Codex and Claude in the terminal](output/playwright/mushu-gallery/terminal-chat.png) | ![Anonymous two-host drawer](output/playwright/mushu-gallery/two-host-drawer.png) |
 
-### Video demo
+| Screenshot compose | Settings |
+|---|---|
+| ![Screenshot compose for a named agent](output/playwright/mushu-gallery/screenshot-compose.png) | ![Anonymous Settings hosts](output/playwright/mushu-gallery/settings.png) |
 
-https://github.com/user-attachments/assets/29f306a6-5572-48aa-8235-7a18566b8d3f
+| Notification attention card |
+|---|
+| ![In-app agent attention card](output/playwright/mushu-gallery/notification-attention.png) |
 
 ## Status
 
@@ -136,7 +142,5 @@ Inspired by [t3code](https://github.com/pingdotgg/t3code)'s control-surface shap
 
 ## License
 
-GPLv3. Free software stays free: use it, ship it, but keep it open.
+GPLv3. Free software stays free: use it, ship it, but keep it open.  
 _Others sell this experience behind paywalls and closed code; mushu does it fully open source._
-
-The vendored `web/vendor/jsQR.js` decoder is jsQR 1.4.0 under Apache-2.0; its complete notice is in `web/vendor/jsQR.LICENSE.txt`.
