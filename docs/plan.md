@@ -97,6 +97,8 @@ Full-screen Settings, QR-only in-app host pairing, and explicit latest-stable ho
 
 An automated anonymous screenshot gallery and fail-on-diff Chromium workflow were added on 2026-08-01. Five committed 390x844 dark baselines exercise the real PWA assets with test-only fixtures: terminal agent chat, the two-host drawer, screenshot Compose, Settings, and the in-app notification attention card. This establishes reproducible browser evidence without claiming installed-iOS, native gallery, service-worker, or Web Push delivery validation.
 
+Service setup and removal were hardened on 2026-08-03 (D16-D17): release installs remain placement-only, `mushuctl` atomically renders platform units and VAPID state, validates existing secrets and exact P-256 scalars, refuses unsafe uninstall targets, and aborts deletion unless the service is confirmed inactive and unloaded. Dependency-free fake-manager tests exercise both macOS and Linux paths without touching a live service. Real host install, upgrade, VAPID transfer, and uninstall remain owner-validation work; this does not satisfy the M5 gate.
+
 Steps:
 
 1. Pairing and honest docs (done 2026-07-31): `mushuctl pair` prints a QR that signs a phone in without typing a token (D11), and the docs now match the shipped app, including the shared VAPID keypair that multi-host alerts require.
@@ -105,6 +107,7 @@ Steps:
 4. Quiet hours: a time window in the notifier loop, so a finished agent does not wake you at 3am.
 5. Honest limitations doc versus commercial alternatives (image paste, Live Activities out of scope without a native app) and versus t3code.
 6. Reproducible anonymous visual regression gallery with explicit baseline updates and CI diff artifacts (done 2026-08-01).
+7. Reproducible service lifecycle: placement-only release installer, atomic unit and VAPID changes, guarded uninstall, and isolated macOS/Linux shell tests (implemented 2026-08-03; real-host owner validation pending).
 
 Acceptance criteria:
 
