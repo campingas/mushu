@@ -80,6 +80,8 @@ Multi-host UX landed early on 2026-07-31: settings panel storing per-host URL an
 - [ ] Quiet hours in the notifier loop.
 - [x] Document screenshot attachment support and the remaining native share-sheet, clipboard-image, multi-image, terminal-attachment, and Live Activities limitations.
 - [x] Add five anonymous 390x844 dark Chromium baselines from the real PWA assets, explicit Bun update/check commands, and fail-on-diff CI artifacts without claiming iOS or Web Push delivery validation (2026-08-01).
+- [x] Harden service installation, VAPID import, and uninstall with canonical binary resolution, validated secrets, same-directory atomic replacement, recoverable restart failure, guarded deletion, placement-only `install.sh`, and isolated fake launchd/systemd regression tests (D16-D17, 2026-08-03).
+- [ ] Owner validates fresh install, update guidance without automatic restart, cross-host VAPID import, and uninstall on real macOS and Linux hosts; isolated manager tests do not prove live launchd/systemd behavior.
 - [ ] Gate: user validates and decides next direction.
 
 ## Dropped by the pivot (record only)

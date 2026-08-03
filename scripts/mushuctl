@@ -1,25 +1,41 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+export LC_ALL=C
 
 service_name="mushu.service"
 launchd_label="dev.mushu.server"
 launchd_plist="${MUSHU_LAUNCHD_PLIST:-$HOME/Library/LaunchAgents/dev.mushu.server.plist}"
 launchd_log="${MUSHU_LOG_FILE:-$HOME/Library/Logs/mushu/mushu-server.log}"
+# Mirrors config_dir() in server/src/push.rs, which builds this from HOME and
+# deliberately ignores XDG_CONFIG_HOME. Diverging here would point these
+# commands at a directory the server never reads.
+mushu_config_dir="$HOME/.config/mushu"
 
 usage() {
   cat <<'EOF'
 Usage: mushuctl <command> [args]
 
 Commands:
+  install-service    Render the launchd or systemd user unit and start it
   start              Start the Mushu user service
   stop               Stop the Mushu user service
   restart            Restart the Mushu user service
   status             Report Mushu service state without printing its environment
   logs               Follow Mushu service logs
   pair               Show a QR code that signs a phone in to this host
+  vapid-export       Write this host's VAPID key to stdout
+  vapid-import       Read a VAPID key from stdin, then reset and restart push
   with-herdr [args]  Run herdr in the foreground with Mushu available
+  uninstall          Remove Mushu, its service unit, token, keys, and data
   help               Show this help
+
+Options:
+  install-service --print   Write the rendered unit to stdout, install nothing
+  uninstall --yes           Skip the confirmation prompt
+
+Sharing push notifications with another host:
+  mushuctl vapid-export | ssh otherhost '~/.local/bin/mushuctl vapid-import'
 EOF
 }
 
@@ -35,6 +51,66 @@ platform() {
 }
 
 platform_name="$(platform)" || exit 1
+
+require_safe_home() {
+  if [[ -z "${HOME:-}" || "$HOME" != /* || "$HOME" == "/" || "$HOME" == *$'\n'* ]]; then
+    printf 'mushuctl: HOME is not a safe absolute user directory\n' >&2
+    return 1
+  fi
+}
+
+path_is_under_home() {
+  [[ "$1" == "$HOME"/* && "$1" != *'/../'* && "$1" != */.. && "$1" != *'/./'* ]]
+}
+
+path_has_user_symlink() {
+  local current="$1"
+  path_is_under_home "$current" || return 1
+  while [[ "$current" != "$HOME" ]]; do
+    [[ -L "$current" ]] && return 0
+    current="$(dirname -- "$current")"
+  done
+  return 1
+}
+
+canonical_executable() {
+  local candidate="$1" directory base canonical
+  [[ "$candidate" == */* ]] || candidate="$(command -v -- "$candidate" || true)"
+  [[ -n "$candidate" ]] || return 1
+  directory="$(dirname -- "$candidate")"
+  base="$(basename -- "$candidate")"
+  canonical="$(unset CDPATH; cd -- "$directory" 2>/dev/null && pwd -P)/$base" || return 1
+  [[ -f "$canonical" && -x "$canonical" ]] || return 1
+  printf '%s\n' "$canonical"
+}
+
+file_mode() {
+  stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null
+}
+
+validate_token_file() {
+  local token_file="$1" token mode
+  if [[ -L "$token_file" || ! -f "$token_file" ]]; then
+    printf 'mushuctl: token must be a regular, non-symlink file: %s\n' "$token_file" >&2
+    return 1
+  fi
+  token="$(<"$token_file")"
+  token="${token#"${token%%[![:space:]]*}"}"
+  token="${token%"${token##*[![:space:]]}"}"
+  if ((${#token} < 16)); then
+    printf 'mushuctl: token must contain at least 16 characters: %s\n' "$token_file" >&2
+    return 1
+  fi
+  mode="$(file_mode "$token_file")" || {
+    printf 'mushuctl: could not inspect token permissions: %s\n' "$token_file" >&2
+    return 1
+  }
+  mode="${mode: -3}"
+  if [[ ! "$mode" =~ ^[0-7]{3}$ ]] || (((8#$mode & 077) != 0)); then
+    printf 'mushuctl: token must have no group or other permissions (run: chmod 600 %q)\n' "$token_file" >&2
+    return 1
+  fi
+}
 
 launchd_target() {
   printf 'gui/%s/%s\n' "$(id -u)" "$launchd_label"
@@ -118,7 +194,11 @@ show_status() {
       fi
       ;;
     linux)
-      printf 'Service: %s\n' "$service_name"
+      if [[ -f "$HOME/.config/systemd/user/$service_name" ]]; then
+        printf 'Service: installed (%s)\n' "$service_name"
+      else
+        printf 'Service: not installed (%s)\n' "$service_name"
+      fi
       ;;
   esac
 }
@@ -136,23 +216,593 @@ follow_logs() {
   esac
 }
 
-pair_device() {
-  local server
+find_server() {
+  local server here sibling
   # Prefer a mushu-server sitting next to this script: mushuctl is often run
   # from a login shell whose PATH does not include the install directory.
-  server="$(command -v mushu-server || true)"
-  if [[ -z "$server" ]]; then
-    local here
-    here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-    if [[ -x "$here/mushu-server" ]]; then
-      server="$here/mushu-server"
-    else
-      printf 'mushuctl: mushu-server not found in PATH or %s\n' "$here" >&2
+  here="$(unset CDPATH; cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+  sibling="$here/mushu-server"
+  if server="$(canonical_executable "$sibling")"; then
+    printf '%s\n' "$server"
+    return 0
+  fi
+  if ! server="$(canonical_executable mushu-server)"; then
+    printf 'mushuctl: executable mushu-server not found beside mushuctl or in PATH\n' >&2
+    return 1
+  fi
+  printf '%s\n' "$server"
+}
+
+# launchd and systemd start the service from an empty environment, not a login
+# shell, so Herdr's directory has to be baked into the unit at render time.
+service_path() {
+  local herdr_bin herdr_dir base
+  case "$platform_name" in
+    macos) base="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" ;;
+    linux) base="$HOME/.local/bin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin" ;;
+  esac
+  herdr_bin="$(command -v herdr || true)"
+  if [[ -n "$herdr_bin" ]]; then
+    herdr_dir="$(unset CDPATH; cd -- "$(dirname -- "$herdr_bin")" && pwd -P)"
+    case ":$base:" in
+      *":$herdr_dir:"*) ;;
+      *) base="$herdr_dir:$base" ;;
+    esac
+  fi
+  printf '%s\n' "$base"
+}
+
+# 24 random bytes as hex, matching what the docs asked people to paste. openssl
+# is not a Mushu dependency anywhere else, so /dev/urandom is the fallback.
+generate_token() {
+  local hex
+  if command -v openssl >/dev/null 2>&1; then
+    hex="$(openssl rand -hex 24)"
+  else
+    hex="$(od -An -tx1 -N24 /dev/urandom | tr -d ' \n')"
+  fi
+  # A short read here would silently produce a weak token, so length is checked
+  # rather than assumed.
+  if ((${#hex} != 48)); then
+    printf 'mushuctl: could not generate 24 random bytes\n' >&2
+    return 1
+  fi
+  printf '%s\n' "$hex"
+}
+
+xml_escape() {
+  local value="$1"
+  value="${value//&/&amp;}"
+  value="${value//</&lt;}"
+  value="${value//>/&gt;}"
+  value="${value//\"/&quot;}"
+  value="${value//\'/&apos;}"
+  printf '%s' "$value"
+}
+
+systemd_value_escape() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//%/%%}"
+  printf '%s' "$value"
+}
+
+systemd_exec_escape() {
+  local value
+  value="$(systemd_value_escape "$1")"
+  value="${value//\$/\$\$}"
+  printf '%s' "$value"
+}
+
+validate_render_values() {
+  local value
+  for value in "$@"; do
+    if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+      printf 'mushuctl: a service value contains an unsupported control character\n' >&2
       return 1
     fi
+  done
+}
+
+validate_file_target() {
+  local target="$1" description="$2"
+  if [[ "$target" != /* || "$target" == "/" || "$target" == "$HOME" ||
+    "$target" == *'/../'* || "$target" == */.. || "$target" == *'/./'* ]]; then
+    printf 'mushuctl: unsafe %s target: %s\n' "$description" "$target" >&2
+    return 1
   fi
+  if [[ -L "$target" ]] || path_has_user_symlink "$target"; then
+    printf 'mushuctl: refusing symlink %s target: %s\n' "$description" "$target" >&2
+    return 1
+  fi
+}
+
+render_unit() {
+  local server="$1" token_file="$2" svc_path="$3" rendered_server rendered_token rendered_path rendered_log
+  case "$platform_name" in
+    macos)
+      rendered_server="$(xml_escape "$server")"
+      rendered_token="$(xml_escape "$token_file")"
+      rendered_path="$(xml_escape "$svc_path")"
+      rendered_log="$(xml_escape "$launchd_log")"
+      cat <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>$launchd_label</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$rendered_server</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>MUSHU_TOKEN_FILE</key>
+    <string>$rendered_token</string>
+    <key>PATH</key>
+    <string>$rendered_path</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>$rendered_log</string>
+  <key>StandardErrorPath</key>
+  <string>$rendered_log</string>
+</dict>
+</plist>
+EOF
+      ;;
+    linux)
+      rendered_server="$(systemd_exec_escape "$server")"
+      rendered_token="$(systemd_value_escape "$token_file")"
+      rendered_path="$(systemd_value_escape "$svc_path")"
+      cat <<EOF
+[Unit]
+Description=Mushu mobile control surface
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart="$rendered_server"
+Environment="MUSHU_TOKEN_FILE=$rendered_token"
+Environment="PATH=$rendered_path"
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+EOF
+      ;;
+  esac
+}
+
+validate_staged_unit() {
+  local staged="$1"
+  case "$platform_name" in
+    macos)
+      if command -v plutil >/dev/null 2>&1; then
+        plutil -lint "$staged" >/dev/null
+      else
+        grep -q '^<plist version="1.0">$' "$staged" && grep -q '^</plist>$' "$staged"
+      fi
+      ;;
+    linux)
+      grep -q '^\[Service\]$' "$staged" &&
+        grep -q '^ExecStart="' "$staged" &&
+        grep -q '^Environment="MUSHU_TOKEN_FILE=' "$staged" &&
+        grep -q '^\[Install\]$' "$staged"
+      ;;
+  esac
+}
+
+stage_unit() {
+  local target="$1" server="$2" token_file="$3" svc_path="$4" staged
+  staged="$(mktemp "$(dirname -- "$target")/.mushu-unit.XXXXXX")" || return 1
+  chmod 600 "$staged"
+  if ! render_unit "$server" "$token_file" "$svc_path" >"$staged" || ! validate_staged_unit "$staged"; then
+    rm -f "$staged"
+    printf 'mushuctl: rendered service unit failed validation\n' >&2
+    return 1
+  fi
+  printf '%s\n' "$staged"
+}
+
+atomic_backup() {
+  local source="$1" backup="$2" staged
+  staged="$(mktemp "$(dirname -- "$backup")/.mushu-backup.XXXXXX")" || return 1
+  if ! cp -p "$source" "$staged" || ! chmod 600 "$staged" || ! mv -f "$staged" "$backup"; then
+    rm -f "$staged"
+    return 1
+  fi
+}
+
+install_service() {
+  local print_only=0 force=0
+  while (($# > 0)); do
+    case "$1" in
+      --print) print_only=1 ;;
+      --force) force=1 ;;
+      *) usage >&2; return 2 ;;
+    esac
+    shift
+  done
+
+  require_safe_home || return 1
+
+  local server token_file svc_path target target_dir staged="" had_unit=0 was_enabled=0
+  server="$(find_server)" || return 1
+  token_file="${MUSHU_TOKEN_FILE:-$HOME/.config/mushu-token}"
+  svc_path="$(service_path)"
+  validate_render_values "$server" "$token_file" "$launchd_log" "$svc_path" || return 1
+  validate_file_target "$token_file" token || return 1
+
+  case "$platform_name" in
+    macos) target="$launchd_plist" ;;
+    linux) target="$HOME/.config/systemd/user/$service_name" ;;
+  esac
+  validate_file_target "$target" service-unit || return 1
+
+  if ((print_only)); then
+    render_unit "$server" "$token_file" "$svc_path"
+    return 0
+  fi
+
+  if ! command -v herdr >/dev/null 2>&1; then
+    printf 'Warning: herdr was not found, so the web terminal will fail until it is installed.\n' >&2
+  fi
+
+  # Mushu is configured through environment variables, and for a service those
+  # live in the unit, so the unit is the configuration file. An existing one may
+  # carry MUSHU_HOST, MUSHU_BIND, or MUSHU_CMD that this render knows nothing
+  # about; replacing it unasked would silently drop them.
+  target_dir="$(dirname -- "$target")"
+  [[ -L "$target_dir" ]] && {
+    printf 'mushuctl: refusing symlink service directory: %s\n' "$target_dir" >&2
+    return 1
+  }
+  [[ -d "$target_dir" ]] || install -d -m 700 "$target_dir"
+
+  # Writing is decoupled from the lifecycle below: re-running on a host that is
+  # already correct should not drop live terminal sessions to prove it.
+  local wrote_unit=1
+  if [[ -e "$target" ]] && ((!force)); then
+    [[ -f "$target" && ! -L "$target" ]] || {
+      printf 'mushuctl: existing service unit is not a regular file: %s\n' "$target" >&2
+      return 1
+    }
+    had_unit=1
+    if render_unit "$server" "$token_file" "$svc_path" | diff -q - "$target" >/dev/null 2>&1; then
+      printf 'Service unit is already current: %s\n' "$target"
+      wrote_unit=0
+    else
+      printf 'mushuctl: a service unit already exists and differs: %s\n' "$target" >&2
+      printf 'It may set MUSHU_HOST, MUSHU_BIND, or MUSHU_CMD that this render does not.\n' >&2
+      printf 'Compare it with "mushuctl install-service --print", then re-run with --force to replace it.\n' >&2
+      return 1
+    fi
+  elif [[ -e "$target" ]]; then
+    [[ -f "$target" && ! -L "$target" && ! -L "$target.bak" ]] || {
+      printf 'mushuctl: existing service unit or backup is unsafe: %s\n' "$target" >&2
+      return 1
+    }
+    had_unit=1
+    atomic_backup "$target" "$target.bak" || {
+      printf 'mushuctl: could not back up service unit: %s\n' "$target" >&2
+      return 1
+    }
+    printf 'Replaced unit backed up to %s\n' "$target.bak"
+  fi
+
+  # After the guard above, so a refused run leaves no new secret behind. Both
+  # units restart on failure, so a unit installed without a token would
+  # crash-loop, and creating it here is also what gives it the right mode:
+  # pasting a generator by hand is where a world-readable token comes from.
+  if [[ ! -e "$token_file" ]]; then
+    local token_dir token
+    token_dir="$(dirname "$token_file")"
+    [[ -L "$token_dir" ]] && {
+      printf 'mushuctl: refusing symlink token directory: %s\n' "$token_dir" >&2
+      return 1
+    }
+    [[ -d "$token_dir" ]] || install -d -m 700 "$token_dir"
+    token="$(generate_token)" || return 1
+    # noclobber loses safely against a concurrent writer, and umask means the
+    # file is never briefly readable by anyone else. An existing token is never
+    # replaced: a new one would silently lock out every paired phone.
+    (
+      umask 077
+      set -o noclobber
+      printf '%s\n' "$token" >"$token_file"
+    ) || {
+      printf 'mushuctl: could not create the token file: %s\n' "$token_file" >&2
+      return 1
+    }
+    printf 'Generated an access token at %s\n' "$token_file"
+  fi
+  validate_token_file "$token_file" || return 1
+
+  if ((wrote_unit)); then
+    staged="$(stage_unit "$target" "$server" "$token_file" "$svc_path")" || return 1
+  fi
+
+  case "$platform_name" in
+    macos)
+      validate_file_target "$launchd_log" log-file || { [[ -z "$staged" ]] || rm -f "$staged"; return 1; }
+      [[ -L "$(dirname -- "$launchd_log")" ]] && {
+        [[ -z "$staged" ]] || rm -f "$staged"
+        printf 'mushuctl: refusing symlink log directory: %s\n' "$(dirname -- "$launchd_log")" >&2
+        return 1
+      }
+      install -d "$(dirname "$launchd_log")"
+      if ((wrote_unit)); then
+        # launchd keeps serving the definition it loaded, so a rewritten file is
+        # ignored until the label is unloaded.
+        if is_loaded; then
+          if ! launchctl bootout "$(launchd_target)"; then
+            rm -f "$staged"
+            printf 'mushuctl: could not unload the existing Mushu service; unit left untouched\n' >&2
+            return 1
+          fi
+          local waited=0
+          while is_loaded && ((waited < 20)); do
+            sleep 0.1
+            waited=$((waited + 1))
+          done
+          if is_loaded; then
+            rm -f "$staged"
+            printf 'mushuctl: Mushu remained loaded; unit left untouched\n' >&2
+            return 1
+          fi
+        fi
+        mv -f "$staged" "$target"
+      fi
+      if is_loaded; then
+        start_service
+      elif ! launchctl bootstrap "gui/$(id -u)" "$launchd_plist"; then
+        if ((wrote_unit)); then
+          if ((had_unit)); then atomic_backup "$target.bak" "$target"; else rm -f "$target"; fi
+          ((had_unit)) && launchctl bootstrap "gui/$(id -u)" "$target" >/dev/null 2>&1 || true
+        fi
+        printf 'mushuctl: service did not start; the previous unit was restored when available\n' >&2
+        return 1
+      fi
+      ;;
+    linux)
+      if ((wrote_unit)); then
+        mv -f "$staged" "$target"
+        if ! systemctl --user daemon-reload; then
+          if ((had_unit)); then atomic_backup "$target.bak" "$target"; else rm -f "$target"; fi
+          systemctl --user daemon-reload >/dev/null 2>&1 || true
+          printf 'mushuctl: systemd reload failed; the previous unit was restored when available\n' >&2
+          return 1
+        fi
+      fi
+      systemctl --user is-enabled --quiet "$service_name" && was_enabled=1
+      if ! systemctl --user enable "$service_name"; then
+        ((was_enabled)) || systemctl --user disable "$service_name" >/dev/null 2>&1 || true
+        if ((wrote_unit)); then
+          if ((had_unit)); then atomic_backup "$target.bak" "$target"; else rm -f "$target"; fi
+          systemctl --user daemon-reload >/dev/null 2>&1 || true
+        fi
+        printf 'mushuctl: service could not be enabled; the previous unit was restored when available\n' >&2
+        return 1
+      fi
+      if ((wrote_unit)); then
+        if ! systemctl --user restart "$service_name"; then
+          ((was_enabled)) || systemctl --user disable "$service_name" >/dev/null 2>&1 || true
+          if ((had_unit)); then atomic_backup "$target.bak" "$target"; else rm -f "$target"; fi
+          systemctl --user daemon-reload >/dev/null 2>&1 || true
+          ((had_unit)) && systemctl --user restart "$service_name" >/dev/null 2>&1 || true
+          printf 'mushuctl: service did not start; the previous unit was restored when available\n' >&2
+          return 1
+        fi
+      else
+        if ! systemctl --user start "$service_name"; then
+          ((was_enabled)) || systemctl --user disable "$service_name" >/dev/null 2>&1 || true
+          return 1
+        fi
+      fi
+      ;;
+  esac
+  if ((wrote_unit)); then
+    printf 'Mushu service installed and started.\n'
+  else
+    printf 'Mushu service left as installed, and is running.\n'
+  fi
+}
+
+# A browser holds one push subscription per VAPID key, so every host the app
+# talks to has to share one keypair. These read and write stdin and stdout only:
+# mushuctl never reaches another machine itself, which keeps ssh options, ports,
+# and jump hosts the user's business rather than something to reimplement here.
+vapid_export() {
+  local key_file="$mushu_config_dir/vapid.key"
+  require_safe_home || return 1
+  if [[ ! -e "$key_file" ]]; then
+    printf 'mushuctl: no VAPID key at %s\n' "$key_file" >&2
+    printf 'The server writes one the first time it starts. Run "mushuctl start" first.\n' >&2
+    return 1
+  fi
+  if [[ -L "$key_file" || ! -f "$key_file" ]]; then
+    printf 'mushuctl: VAPID key must be a regular, non-symlink file: %s\n' "$key_file" >&2
+    return 1
+  fi
+  if [[ -t 1 ]]; then
+    printf 'Warning: this is a private key. Pipe it rather than printing it.\n' >&2
+  fi
+  tr -d '[:space:]' <"$key_file"
+  printf '\n'
+}
+
+base64url_less_than() {
+  local left="$1" right="$2" alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
+  local index left_char right_char left_prefix right_prefix left_value right_value
+  for ((index = 0; index < ${#left}; index++)); do
+    left_char="${left:index:1}"
+    right_char="${right:index:1}"
+    left_prefix="${alphabet%%"$left_char"*}"
+    right_prefix="${alphabet%%"$right_char"*}"
+    left_value=${#left_prefix}
+    right_value=${#right_prefix}
+    ((left_value < right_value)) && return 0
+    ((left_value > right_value)) && return 1
+  done
+  return 1
+}
+
+validate_vapid_scalar() {
+  local key="$1"
+  # Canonical unpadded base64url for 32 bytes is 43 characters. Equal-length
+  # base64url preserves big-endian digit order, so comparing against the encoded
+  # P-256 group order proves 1 <= scalar < n without a platform-specific decoder.
+  local order='_____wAAAAD__________7zm-q2nF56E87nKwvxjJVE'
+  if ((${#key} != 43)) || [[ ! "$key" =~ ^[A-Za-z0-9_-]+$ ]] ||
+    [[ ! "${key: -1}" =~ ^[AEIMQUYcgkosw048]$ ]] ||
+    [[ "$key" == 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' ]] ||
+    ! base64url_less_than "$key" "$order"; then
+    printf 'mushuctl: stdin is not a valid P-256 VAPID private scalar\n' >&2
+    return 1
+  fi
+}
+
+vapid_import() {
+  require_safe_home || return 1
+  local key="" key_file="$mushu_config_dir/vapid.key" key_backup="$mushu_config_dir/vapid.key.bak"
+  local subscriptions="$mushu_config_dir/subscriptions.json" subscriptions_backup="$mushu_config_dir/subscriptions.json.bak"
+  local staged was_active=0 had_key=0 had_subscriptions=0 extra=""
+  IFS= read -r -n 129 key || true
+  if ((${#key} >= 129)); then
+    printf 'mushuctl: VAPID input exceeds 128 bytes\n' >&2
+    return 1
+  fi
+  IFS= read -r -n 1 extra || true
+  if [[ -n "$extra" ]]; then
+    printf 'mushuctl: VAPID input contains trailing data\n' >&2
+    return 1
+  fi
+  [[ "$key" == *$'\r' ]] && key="${key%?}"
+  validate_vapid_scalar "$key" || return 1
+
+  path_is_under_home "$mushu_config_dir" || {
+    printf 'mushuctl: unsafe VAPID directory: %s\n' "$mushu_config_dir" >&2
+    return 1
+  }
+  if [[ -L "$mushu_config_dir" ]] || path_has_user_symlink "$mushu_config_dir" ||
+    [[ -e "$mushu_config_dir" && ! -d "$mushu_config_dir" ]]; then
+    printf 'mushuctl: VAPID directory must be a real directory: %s\n' "$mushu_config_dir" >&2
+    return 1
+  fi
+  [[ -d "$mushu_config_dir" ]] || install -d -m 700 "$mushu_config_dir"
+  local path
+  for path in "$key_file" "$key_backup" "$subscriptions" "$subscriptions_backup"; do
+    if [[ -L "$path" || ( -e "$path" && ! -f "$path" ) ]]; then
+      printf 'mushuctl: refusing unsafe VAPID state target: %s\n' "$path" >&2
+      return 1
+    fi
+  done
+  if [[ -e "$key_file" ]] && [[ "$(tr -d '[:space:]' <"$key_file")" == "$key" ]]; then
+    chmod 600 "$key_file"
+    [[ ! -e "$key_backup" ]] || chmod 600 "$key_backup"
+    printf 'This host already uses that VAPID key.\n'
+    return 0
+  fi
+
+  staged="$(mktemp "$mushu_config_dir/.vapid.key.XXXXXX")" || return 1
+  chmod 600 "$staged"
+  printf '%s' "$key" >"$staged"
+  [[ "$(file_mode "$staged")" == 600 ]] || {
+    rm -f "$staged"
+    printf 'mushuctl: could not secure staged VAPID key\n' >&2
+    return 1
+  }
+
+  is_active && was_active=1
+  if [[ -e "$key_file" ]]; then
+    had_key=1
+    atomic_backup "$key_file" "$key_backup" || { rm -f "$staged"; return 1; }
+    printf 'Previous key backed up to %s\n' "$key_file.bak"
+  fi
+  if [[ -e "$subscriptions" ]]; then
+    had_subscriptions=1
+    atomic_backup "$subscriptions" "$subscriptions_backup" || { rm -f "$staged"; return 1; }
+  fi
+  mv -f "$staged" "$key_file"
+  # Subscriptions are signed against the retired key, so keeping them would make
+  # every send fail. Phones re-subscribe on their next visit with alerts on.
+  ((had_subscriptions)) && rm -f "$subscriptions"
+  printf 'VAPID key installed; existing subscriptions cleared.\n'
+  if ((was_active)); then
+    if ! restart_service; then
+      if ((had_key)); then
+        atomic_backup "$key_backup" "$key_file"
+      else
+        rm -f "$key_file"
+      fi
+      ((had_subscriptions)) && atomic_backup "$subscriptions_backup" "$subscriptions"
+      restart_service >/dev/null 2>&1 || true
+      printf 'mushuctl: restart failed; the previous key and subscriptions were restored\n' >&2
+      return 1
+    fi
+  else
+    printf 'Mushu is not running; the key applies at next start.\n'
+  fi
+}
+
+# Offered after pairing because that is when a second host exists and the owner
+# is already at the keyboard. The pull direction is deliberate: this host is the
+# new one, so importing here costs nothing, while pushing this host's key
+# outward would clear the established host's subscriptions and unsubscribe the
+# phone that already works.
+offer_vapid_pull() {
+  [[ -t 0 && -t 1 ]] || return 0
+  local key_file="$mushu_config_dir/vapid.key" other reply
+  printf '\nIf a phone already gets push notifications from another host, this\n'
+  printf 'host needs that host'"'"'s push key, or its alerts cannot reach the app.\n'
+  read -r -p 'Copy it from which host? (ssh name, blank to skip) ' other || return 0
+  [[ -n "$other" ]] || return 0
+
+  # The tilde stays literal so the remote shell expands it: a non-interactive
+  # ssh session has no login PATH, so the path has to be spelled out there.
+  local remote_ctl=${MUSHU_REMOTE_MUSHUCTL:-"~/.local/bin/mushuctl"}
+  printf '\n  ssh %s '"'"'%s vapid-export'"'"' | mushuctl vapid-import\n\n' "$other" "$remote_ctl"
+  if [[ -e "$key_file" ]]; then
+    printf 'This replaces the key this host generated. Its own subscriptions,\n'
+    printf 'if any, are cleared and those phones re-subscribe on next visit.\n'
+  fi
+  read -r -p 'Run it now? [y/N] ' reply || return 0
+  case "$reply" in
+    y | Y | yes | YES | Yes) ;;
+    *)
+      printf 'Skipped. Run it yourself when ready.\n'
+      return 0
+      ;;
+  esac
+
+  local fetched
+  # Captured rather than piped so a failed ssh cannot feed a broken key, or a
+  # profile banner, straight into the import.
+  # shellcheck disable=SC2029  # the tilde must expand on the remote host
+  fetched="$(ssh "$other" "$remote_ctl vapid-export")" || {
+    printf 'mushuctl: could not read a key from %s\n' "$other" >&2
+    return 1
+  }
+  printf '%s' "$fetched" | vapid_import
+}
+
+pair_device() {
+  local server
+  server="$(find_server)" || return 1
   MUSHU_TOKEN_FILE="${MUSHU_TOKEN_FILE:-$HOME/.config/mushu-token}" \
-    exec "$server" pair
+    "$server" pair || return 1
+  offer_vapid_pull
 }
 
 with_herdr() {
@@ -183,12 +833,168 @@ with_herdr() {
   return "$herdr_status"
 }
 
+uninstall_mushu() {
+  local assume_yes=0
+  while (($# > 0)); do
+    case "$1" in
+      -y | --yes) assume_yes=1 ;;
+      *)
+        usage >&2
+        return 2
+        ;;
+    esac
+    shift
+  done
+
+  require_safe_home || return 1
+
+  local here ctl server token_file cache_root unit_file log_file path reply
+  ctl="$(canonical_executable "${BASH_SOURCE[0]}")" || {
+    printf 'mushuctl: cannot verify the installed mushuctl executable\n' >&2
+    return 1
+  }
+  here="$(dirname -- "$ctl")"
+  server="$(canonical_executable "$here/mushu-server")" || {
+    printf 'mushuctl: refusing uninstall without a verified mushu-server beside %s\n' "$ctl" >&2
+    return 1
+  }
+  if [[ -L "$ctl" || -L "$server" || "$(dirname -- "$server")" != "$here" ]]; then
+    printf 'mushuctl: installed binaries are not one safe, regular pair\n' >&2
+    return 1
+  fi
+  token_file="${MUSHU_TOKEN_FILE:-$HOME/.config/mushu-token}"
+  cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/mushu"
+  case "$platform_name" in
+    macos)
+      unit_file="$launchd_plist"
+      log_file="$launchd_log"
+      ;;
+    linux)
+      unit_file="$HOME/.config/systemd/user/$service_name"
+      log_file=""
+      ;;
+  esac
+
+  validate_file_target "$unit_file" service-unit || return 1
+  validate_file_target "$token_file" token || return 1
+  [[ -z "$log_file" ]] || validate_file_target "$log_file" log-file || return 1
+  path_is_under_home "$token_file" || {
+    printf 'mushuctl: refusing to uninstall a token outside HOME: %s\n' "$token_file" >&2
+    return 1
+  }
+  for path in "$mushu_config_dir" "$cache_root"; do
+    if [[ "$path" != /* || "$path" == "/" || "$path" == "$HOME" ||
+      "$(basename -- "$path")" != mushu || "$path" == *'/../'* || "$path" == */.. ||
+      -L "$path" || ( -e "$path" && ! -d "$path" ) ]] || path_has_user_symlink "$path"; then
+      printf 'mushuctl: refusing unsafe recursive target: %s\n' "$path" >&2
+      return 1
+    fi
+  done
+  for path in "$unit_file" "$unit_file.bak" "$server" "$ctl" "$token_file" \
+    "$mushu_config_dir" "$cache_root" "$log_file"; do
+    if [[ -L "$path" ]]; then
+      printf 'mushuctl: refusing symlink uninstall target: %s\n' "$path" >&2
+      return 1
+    fi
+  done
+
+  local -a targets=()
+  for path in "$unit_file" "$unit_file.bak" "$server" "$ctl" "$token_file" \
+    "$mushu_config_dir" "$cache_root" "$log_file"; do
+    if [[ -n "$path" && -e "$path" ]]; then
+      targets+=("$path")
+    fi
+  done
+  if ((${#targets[@]} == 0)); then
+    printf 'Nothing to remove: no Mushu files found on this host.\n'
+    return 0
+  fi
+
+  printf 'This removes Mushu from this host:\n'
+  printf '  %s\n' "${targets[@]}"
+  printf '\nThe access token and the VAPID key are included, so every paired\n'
+  printf 'phone has to be paired again after a reinstall.\n\n'
+
+  if ((!assume_yes)); then
+    if [[ ! -t 0 ]]; then
+      printf 'mushuctl: refusing to uninstall without a terminal; pass --yes\n' >&2
+      return 1
+    fi
+    read -r -p 'Remove all of this? [y/N] ' reply || return 1
+    case "$reply" in
+      y | Y | yes | YES | Yes) ;;
+      *)
+        printf 'Nothing removed.\n'
+        return 0
+        ;;
+    esac
+  fi
+
+  # Stopped first, so nothing rewrites subscriptions or a log after removal.
+  case "$platform_name" in
+    macos)
+      if is_loaded; then
+        launchctl bootout "$(launchd_target)" || {
+          printf 'mushuctl: could not unload Mushu; nothing was deleted\n' >&2
+          return 1
+        }
+        local waited=0
+        while is_loaded && ((waited < 20)); do
+          sleep 0.1
+          waited=$((waited + 1))
+        done
+        if is_loaded; then
+          printf 'mushuctl: Mushu remained loaded; nothing was deleted\n' >&2
+          return 1
+        fi
+      fi
+      ;;
+    linux)
+      if [[ -e "$unit_file" ]] || systemctl --user is-active --quiet "$service_name" ||
+        systemctl --user is-enabled --quiet "$service_name"; then
+        systemctl --user disable --now "$service_name" || {
+          printf 'mushuctl: could not disable and stop Mushu; nothing was deleted\n' >&2
+          return 1
+        }
+        local waited=0
+        while systemctl --user is-active --quiet "$service_name" && ((waited < 20)); do
+          sleep 0.1
+          waited=$((waited + 1))
+        done
+        if systemctl --user is-active --quiet "$service_name" ||
+          systemctl --user is-enabled --quiet "$service_name"; then
+          printf 'mushuctl: Mushu remained active or enabled; nothing was deleted\n' >&2
+          return 1
+        fi
+      fi
+      ;;
+  esac
+
+  rm -f "$unit_file" "$unit_file.bak"
+  if [[ "$platform_name" == linux ]]; then
+    systemctl --user daemon-reload 2>/dev/null || true
+  fi
+  rm -rf "$mushu_config_dir" "$cache_root"
+  rm -f "$token_file"
+  [[ -z "$log_file" ]] || rm -f "$log_file"
+  rm -f "$server"
+  printf 'Mushu removed.\n'
+  if command -v tailscale >/dev/null 2>&1; then
+    printf '\nTailscale may still proxy to the port Mushu used. Review it with:\n'
+    printf '  tailscale serve status\n'
+  fi
+  # Last, and safe while running: the shell keeps its open descriptor to this
+  # file after the directory entry is gone.
+  rm -f "$ctl"
+}
+
 command="${1:-help}"
 if (($# > 0)); then
   shift
 fi
 
 case "$command" in
+  install-service) install_service "$@" ;;
   start)
     (($# == 0)) || { usage >&2; exit 2; }
     start_service
@@ -213,7 +1019,16 @@ case "$command" in
     (($# == 0)) || { usage >&2; exit 2; }
     pair_device
     ;;
+  vapid-export)
+    (($# == 0)) || { usage >&2; exit 2; }
+    vapid_export
+    ;;
+  vapid-import)
+    (($# == 0)) || { usage >&2; exit 2; }
+    vapid_import
+    ;;
   with-herdr) with_herdr "$@" ;;
+  uninstall) uninstall_mushu "$@" ;;
   help|-h|--help)
     (($# == 0)) || { usage >&2; exit 2; }
     usage

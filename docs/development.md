@@ -11,8 +11,7 @@ How to build, run, and extend mushu. See [architecture.md](architecture.md) for 
 | `server/src/push.rs` | VAPID keypair, subscription store, Web Push sending |
 | `server/src/update.rs` | fixed-repository latest-stable checks, download validation, atomic replacement |
 | `web/` | the PWA: `index.html`, `app.js`, `style.css`, `sw.js`, vendored xterm.js and jsQR |
-| `scripts/mushuctl` | service control and phone pairing |
-| `services/` | launchd and systemd unit templates |
+| `scripts/mushuctl` | service unit rendering, service control, and phone pairing |
 
 ## Local loop
 
@@ -87,7 +86,9 @@ These checks cover deterministic Chromium rendering and client logic only. They 
 
 ## Releasing
 
-CI (`.github/workflows/ci.yml`) runs `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` on every branch push. Keep those green locally before pushing.
+`tests/mushuctl.sh` exercises service rendering, lifecycle failure, secret validation, VAPID replacement, uninstall scope, and installer guidance in temporary homes with fake launchd and systemd commands. It never calls the live service manager. Run it after changing `scripts/mushuctl` or `install.sh`; `plutil` lints the emulated macOS render when available.
+
+CI (`.github/workflows/ci.yml`) runs that isolated shell suite, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` on every branch push. Keep those green locally before pushing.
 
 Pushing a `v*` tag triggers `.github/workflows/release.yml`, which first requires the tag to equal `v` plus `server/Cargo.toml`'s package version, then builds four targets (macOS and Linux, x86_64 and aarch64), publishes them with `mushuctl` and a `SHA256SUMS` file, and generates release notes. Tagged binaries embed the tag, `GITHUB_SHA`, and `stable` kind; `mushu-server --version` exposes all three. Both macOS binaries are built on the arm64 runner, the x86_64 one cross-compiled, because the Intel runner has been retired. The workflow also accepts `workflow_dispatch`, which produces `dev` binaries without publishing anything.
 

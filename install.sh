@@ -7,6 +7,9 @@ set -eu
 
 REPO="campingas/mushu"
 INSTALL_DIR="${MUSHU_INSTALL_DIR:-$HOME/.local/bin}"
+# Whether this host is already set up, which is what decides the closing hint.
+# Matches mushuctl's own default so a custom token path is not misread as unset.
+TOKEN_FILE="${MUSHU_TOKEN_FILE:-$HOME/.config/mushu-token}"
 
 die() {
   printf 'install.sh: %s\n' "$1" >&2
@@ -90,10 +93,30 @@ Check https://github.com/$REPO/releases, or build from source with: cargo build 
     *":$INSTALL_DIR:"*) ;;
     *) printf '\nNote: %s is not in your PATH.\n' "$INSTALL_DIR" ;;
   esac
-  printf '\nNext:\n'
-  printf '  (umask 077 && openssl rand -hex 24 > ~/.config/mushu-token)\n'
-  printf '  tailscale serve --bg http://127.0.0.1:8422\n'
-  printf '  mushuctl pair    # scan the QR with your phone\n'
+  case "$(uname -s)" in
+    Darwin) unit_file="${MUSHU_LAUNCHD_PLIST:-$HOME/Library/LaunchAgents/dev.mushu.server.plist}" ;;
+    Linux) unit_file="$HOME/.config/systemd/user/mushu.service" ;;
+  esac
+  if [ ! -e "$unit_file" ]; then
+    printf '\nNext:\n'
+    if [ -e "$TOKEN_FILE" ]; then
+      printf '  mushuctl install-service         # validate token, install unit, then start\n'
+    else
+      printf '  mushuctl install-service         # generate token, install unit, then start\n'
+    fi
+    printf '  tailscale serve --bg http://127.0.0.1:8422\n'
+    printf '  mushuctl pair                    # scan the QR with your phone\n'
+  elif "$INSTALL_DIR/mushuctl" status 2>/dev/null | grep -q '^Mushu: active$'; then
+    # `install` replaces the file rather than writing through it, so the live
+    # process keeps running from the old inode and still serves the previous
+    # version. Placement stays non-disruptive: the owner chooses when to drop
+    # live sessions by restarting it.
+    printf '\nThe running service is still on the previous version. When ready:\n'
+    printf '  mushuctl restart\n'
+  else
+    printf '\nNext:\n'
+    printf '  mushuctl start    # the installed service is not running\n'
+  fi
 }
 
 main "$@"
