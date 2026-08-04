@@ -23,7 +23,7 @@ Revised 2026-07-30 for the PWA pivot (decisions D6-D8). Dropped tasks from the B
 
 - [x] Scaffold Rust workspace: `server/` (axum, tokio, portable-pty) + `web/` (vendored xterm.js, embedded via rust-embed).
 - [x] WebSocket terminal endpoint spawning the attach command in a pty (`herdr` by default, or a fallback such as `tmux new-session -A -s main` on a host without Herdr; HERDR* env stripped from the child to avoid nested-attach refusal).
-- [x] Client: resize, reconnect with backoff, compact touch toolbar (Esc, Tab, Ctrl, disabled move placeholder, image Compose, microphone Compose).
+- [x] Client: resize, reconnect with backoff, compact touch toolbar (Esc, Tab, Ctrl, arrow pad, image Compose, microphone Compose).
 - [x] Bind hardened beyond plan: 127.0.0.1 only, published solely through Tailscale Serve; token auth (min 16 chars, constant-time compare).
 - [x] Tailscale Serve: 443 where free, 8443 on a host whose 443 is taken; the pre-existing mapping verified untouched.
 - [x] Service files: launchd `dev.mushu.server` (macOS), systemd user unit with linger (Linux); tokens in `~/.config/mushu-token` (600).

@@ -163,6 +163,46 @@ body {
   touch-action: none;
 }
 
+/* Floated above the toolbar rather than inside it: #toolbar is overflow:hidden
+   and its buttons are flex siblings, so a grid child would be clipped. JS sets
+   `bottom` from the live toolbar height on open and on visual-viewport change,
+   which keeps the pad tracking the toolbar when the iOS keyboard slides in. */
+#dpad {
+  position: absolute;
+  left: 50%;
+  z-index: 15;
+  display: grid;
+  grid-template-columns: repeat(3, 56px);
+  gap: 6px;
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--overlay-0);
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  transform: translateX(-50%);
+}
+
+#dpad.hidden { display: none; }
+
+#dpad button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 48px;
+  color: var(--fg);
+  background: var(--surface-0);
+  border: 1px solid var(--overlay-0);
+  border-radius: 10px;
+  touch-action: manipulation;
+}
+
+#dpad button:active { background: var(--surface-1); }
+#dpad button svg { display: block; width: 18px; height: 18px; fill: currentColor; }
+#dpad .dpad-down { grid-column: 2; }
+#dpad .dpad-danger { color: var(--red); border-color: var(--red); }
+#dpad .dpad-enter { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
+#dpad .dpad-enter:active { background: var(--accent); filter: brightness(1.2); }
+
 #toolbar {
   position: relative;
   isolation: isolate;

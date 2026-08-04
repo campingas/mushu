@@ -511,10 +511,25 @@
     if (document.visibilityState === 'visible') restoreViewport();
   });
 
+  // Cursor keys switch between CSI and SS3 forms with DECCKM, so a full-screen
+  // app that set application cursor mode gets the sequence it asked for.
+  const cursorKey = (letter) => (term.modes.applicationCursorKeysMode ? '\x1bO' : '\x1b[') + letter;
+
   const keys = {
     esc: '\x1b',
     tab: '\t',
+    enter: '\r',
+    del: '\x7f',
+    up: () => cursorKey('A'),
+    down: () => cursorKey('B'),
+    right: () => cursorKey('C'),
+    left: () => cursorKey('D'),
   };
+
+  function keySequence(name) {
+    const seq = keys[name];
+    return typeof seq === 'function' ? seq() : seq;
+  }
 
   function toggleCtrl(on) {
     ctrlOn = on ?? !ctrlOn;
@@ -585,22 +600,94 @@
   });
 
   const toolbar = document.getElementById('toolbar');
+  const dpad = document.getElementById('dpad');
+  const dpadButton = document.getElementById('dpad-btn');
   let toolbarKeyboardWasOpen = false;
-  toolbar.addEventListener('pointerdown', () => {
+
+  // The arrow pad taps have to run through the same focus dance as the toolbar
+  // itself: recording the keyboard state on pointerdown and restoring it after
+  // the click is what stops each tap from blurring xterm and dismissing the
+  // iOS keyboard, which would make the pad usable exactly once.
+  function rememberKeyboard() {
     toolbarKeyboardWasOpen = document.activeElement === term.textarea;
-  });
+  }
+
+  function restoreKeyboard() {
+    toolbarKeyboardWasOpen ? term.focus() : term.blur();
+  }
+
+  toolbar.addEventListener('pointerdown', rememberKeyboard);
+  dpad.addEventListener('pointerdown', rememberKeyboard);
+
   toolbar.addEventListener('click', (ev) => {
     const btn = ev.target.closest('button');
     if (!btn || btn.disabled) return;
     if (btn.id === 'image-compose' || btn.id === 'mic') return openVoiceBar();
-    if (btn.id === 'ctrl') {
+    if (btn.id === 'dpad-btn') {
+      toggleDpad();
+    } else if (btn.id === 'ctrl') {
       toggleCtrl();
     } else {
-      const seq = keys[btn.dataset.key];
+      const seq = keySequence(btn.dataset.key);
       if (seq) send(seq);
     }
-    toolbarKeyboardWasOpen ? term.focus() : term.blur();
+    restoreKeyboard();
   });
+
+  dpad.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('button');
+    if (!btn) return;
+    if (btn.dataset.key === 'paste') {
+      pasteIntoTerminal();
+    } else {
+      const seq = keySequence(btn.dataset.key);
+      if (seq) send(seq);
+    }
+    restoreKeyboard();
+  });
+
+  async function pasteIntoTerminal() {
+    if (!navigator.clipboard?.readText) {
+      setStatus('clipboard unavailable; press and hold in the terminal to paste', false);
+      return;
+    }
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) term.paste(text);
+    } catch (_) {
+      setStatus('clipboard access failed; press and hold in the terminal to paste', false);
+    }
+  }
+
+  function positionDpad() {
+    if (dpad.classList.contains('hidden')) return;
+    dpad.style.bottom = (toolbar.offsetHeight + 6) + 'px';
+  }
+
+  function closeDpad() {
+    if (dpad.classList.contains('hidden')) return;
+    dpad.classList.add('hidden');
+    dpadButton.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('pointerdown', dismissDpad, true);
+  }
+
+  // Anything outside the pad closes it, including the other toolbar buttons,
+  // so the pad never sits over the terminal while something else has focus.
+  function dismissDpad(ev) {
+    if (ev.target.closest('#dpad') || ev.target.closest('#dpad-btn')) return;
+    closeDpad();
+  }
+
+  function toggleDpad() {
+    if (!dpad.classList.contains('hidden')) return closeDpad();
+    dpad.classList.remove('hidden');
+    dpadButton.setAttribute('aria-expanded', 'true');
+    positionDpad();
+    document.addEventListener('pointerdown', dismissDpad, true);
+  }
+
+  window.visualViewport?.addEventListener('resize', positionDpad);
+  window.visualViewport?.addEventListener('scroll', positionDpad);
 
   // --- voice / compose bar (on-device dictation via the iOS keyboard mic) ---
 
