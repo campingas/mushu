@@ -14,14 +14,68 @@ const tabs = [
   { tab_id: 'tab-tests', workspace_id: 'workspace-app', number: 2, label: 'tests', status: 'idle', focused: false },
 ];
 
-const terminalTranscript = [
-  '\u001b[1;36mCodex\u001b[0m  I inspected the sample project and found one failing check.\r\n',
-  '\u001b[90m       tests/ui/navigation.test.ts:42\u001b[0m\r\n\r\n',
-  '\u001b[1;35mClaude\u001b[0m Shall I update the fixture and rerun the focused suite?\r\n',
-  '\u001b[33m       Waiting for approval…\u001b[0m\r\n\r\n',
-  '\u001b[32mCodex\u001b[0m  The remaining checks are stable.\r\n',
-  '\u001b[90m$ ready\u001b[0m ',
-].join('');
+// A Claude session as the pane renders it: the welcome header, the submitted
+// prompt directly under it, the tool transcript, then the composer and status
+// line pinned to the bottom. The fixture terminal is exactly 48x50 once the
+// font is pinned, so the line count below is the viewport height and every
+// line must stay under 48 columns; anything wider wraps and pushes the
+// composer off the bottom.
+const terminalRows = 50;
+const terminalPrompt = 'Fix the failing navigation test and rerun it.';
+const composerInner = 44;
+const dim = (text: string) => `\u001b[90m${text}\u001b[0m`;
+const logo = (text: string) => `\u001b[38;5;209m${text}\u001b[0m`;
+
+// The Claude mark, as Claude Code draws it: three rows of quadrant blocks.
+// Column widths differ per row so the text column lines up at column 11.
+const terminalHeader = [
+  '',
+  `${logo(' ▐▛███▜▌')}   \u001b[1mClaude Code\u001b[0m ${dim('v2.1.220')}`,
+  `${logo('▝▜█████▛▘')}  ${dim('Fable 5 · Claude Pro')}`,
+  `${logo('  ▘▘ ▝▝')}    ${dim('~/projects/sample-app')}`,
+  '',
+  `${dim('>')} ${terminalPrompt}`,
+  '',
+];
+
+const terminalBody = [
+  '\u001b[1m⏺\u001b[0m I will start from the failing assertion.',
+  '',
+  '\u001b[32m⏺\u001b[0m Read(tests/ui/navigation.test.ts)',
+  dim('  ⎿  Read 84 lines'),
+  '',
+  '\u001b[1m⏺\u001b[0m The fixture still expects the old route name.',
+  '',
+  '\u001b[32m⏺\u001b[0m Update(tests/ui/navigation.test.ts)',
+  dim('  ⎿  Updated 1 addition and 1 removal'),
+  `${dim('     42')} \u001b[31m-  expect(route).toBe('/overview')\u001b[0m`,
+  `${dim('     42')} \u001b[32m+  expect(route).toBe('/dashboard')\u001b[0m`,
+  '',
+  '\u001b[32m⏺\u001b[0m Bash(bun test tests/ui/navigation.test.ts)',
+  dim('  ⎿  12 pass, 0 fail in 2.10s'),
+  '',
+  '\u001b[1m⏺\u001b[0m The navigation suite is green again. The route',
+  '  rename in the fixture was the only mismatch.',
+];
+
+const terminalComposer = [
+  dim(`╭${'─'.repeat(composerInner)}╮`),
+  `${dim('│')} > ${' '.repeat(composerInner - 3)}${dim('│')}`,
+  dim(`╰${'─'.repeat(composerInner)}╯`),
+  dim('  ⏵⏵ accept edits on · ? for shortcuts'),
+  dim('  sample-app · main · Fable 5 · 42% left'),
+];
+
+const terminalLines = [
+  ...terminalHeader,
+  ...terminalBody,
+  ...Array(terminalRows - terminalHeader.length - terminalBody.length - terminalComposer.length).fill(''),
+  ...terminalComposer,
+];
+
+// Park the cursor in the composer rather than after the status line: up three
+// rows, back to column one, then right past the "│ > " gutter.
+const terminalTranscript = `${terminalLines.join('\r\n')}\u001b[3A\r\u001b[4C`;
 
 const updateView = {
   build: { tag: 'v0.4.0', sha: '0123456789abcdef', kind: 'stable' },
@@ -39,6 +93,27 @@ async function installHarness(page: Page, attention = false) {
     if (message.type() === 'error') consoleErrors.push(message.text());
   });
   page.on('requestfailed', (request) => requestFailures.push(`${request.method()} ${request.url()}: ${request.failure()?.errorText}`));
+
+  // Pin the terminal font before app.js constructs the terminal. The
+  // container's generic monospace resolves to WenQuanYi Zen Hei Mono, a CJK
+  // face carrying no quadrant block glyphs, so the Claude header art fell back
+  // to a proportional font and landed off the cell grid. xterm measures its
+  // cell from the fontFamily option rather than from CSS, so the override has
+  // to reach the constructor; Liberation Mono and FreeMono both advance 0.6em,
+  // which keeps the quadrant fallback on grid.
+  await page.addInitScript(() => {
+    let terminal: unknown;
+    Object.defineProperty(window, 'Terminal', {
+      configurable: true,
+      get: () => terminal,
+      set: (value: new (options: Record<string, unknown>) => unknown) => {
+        terminal = new Proxy(value, {
+          construct: (target, args: [Record<string, unknown>]) =>
+            new target({ ...args[0], fontFamily: '"Liberation Mono", "FreeMono", monospace' }),
+        });
+      },
+    });
+  });
 
   await page.addInitScript(({ fixtureToken, extraHost, transcript, withAttention }) => {
     Object.defineProperty(navigator, 'serviceWorker', {
@@ -156,9 +231,11 @@ async function anonymousScreenshot(page: Page) {
   return Buffer.from(bytes);
 }
 
-test('terminal Codex and Claude chat', async ({ page }) => {
+test('terminal Claude session', async ({ page }) => {
   const healthy = await installHarness(page);
-  await expect(page.locator('.xterm-rows')).toContainText('Waiting for approval');
+  await expect(page.locator('.xterm-rows')).toContainText('Claude Code');
+  await expect(page.locator('.xterm-rows')).toContainText(terminalPrompt);
+  await expect(page.locator('.xterm-rows')).toContainText('accept edits on');
   await capture(page, 'terminal-chat.png', healthy);
 });
 
@@ -203,3 +280,4 @@ test('fixtures remain anonymous', async () => {
   expect(serialized).not.toMatch(/(?:\/Users\/|\/home\/|\.ts\.net|tailscale|tailnet|rmsrob|campingas|@)/i);
   expect(secondHost).toMatch(/^http:\/\/[a-z-]+\.test:4173$/);
 });
+

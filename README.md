@@ -124,9 +124,9 @@ Two things it deliberately leaves alone: your Tailscale Serve mapping, since rem
 
 These anonymous Chromium baselines are generated from the real PWA assets by the visual regression suite; they are product views, not iOS or Web Push delivery validation.
 
-| Terminal agent chat | Two-host drawer |
+| Terminal agent session | Two-host drawer |
 |---|---|
-| ![Codex and Claude in the terminal](output/playwright/mushu-gallery/terminal-chat.png) | ![Anonymous two-host drawer](output/playwright/mushu-gallery/two-host-drawer.png) |
+| ![A Claude session in the terminal](output/playwright/mushu-gallery/terminal-chat.png) | ![Anonymous two-host drawer](output/playwright/mushu-gallery/two-host-drawer.png) |
 
 | Screenshot compose | Settings |
 |---|---|
