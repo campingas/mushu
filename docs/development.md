@@ -84,9 +84,31 @@ A PWA cannot remove or customize Safari's native iOS keyboard accessory bar. Ter
 
 `web-push` reaches OpenSSL through its `ece` dependency on **every** platform, not only Linux, and offers no rustls option. Default builds therefore link the system OpenSSL, which on macOS means an absolute Homebrew path that does not exist on other machines. Released binaries are built with `--features vendored-tls`, which compiles OpenSSL from source and links it statically. Local development does not need the feature; anything producing a binary for someone else does.
 
+## Settings and host detail
+
+Settings is two views inside one overlay. The list answers only which hosts exist, whether each is reachable, and whether alerts are on: an OS mark, the name, a bell, a chevron. Everything editable lives on the host detail page behind `openHostDetail()`, which hides `#settings-scroll` and shows `#host-detail`: rename, published address, origin, system, build identity, the alerts toggle, the update check and install, and removal. Both views delegate to one `onHostControlClick` handler bound to each container, so the rename, remove, alerts and update paths have a single implementation regardless of which view raised them.
+
+`loadUpdate()` writes through `[data-update-status]` and `[data-update-key]`, which now exist only on the detail page, so `renderHostDetail()` calls it after rendering. The list no longer carries those attributes; `loadUpdate` already tolerates their absence, which is what keeps the global "check updates" control working from the list.
+
+Reachability and identity are tracked separately, in `hostUp` and `hostInfo`. A host that stops answering keeps its last descriptor, so its OS mark greys out instead of reverting to a generic glyph; discarding the descriptor on failure would throw away the identity the list exists to show. Every host is probed with `/api/host` when Settings opens, which is also where non-active hosts pick up their real names.
+
+No host is given a different border. The active host is a selection, not a status, and colouring it read as an alert.
+
+## Icons
+
+UI icons come from Lineicons (MIT) in `web/vendor/icons`, and so do the OS marks in `web/vendor/brands`. The two agent marks come from Bootstrap Icons (MIT) and the generic Linux mark from Simple Icons (CC0), because Lineicons carries neither. Only the icons actually used are vendored, each with a license file beside it. Lineicons ship a hardcoded hex and fixed pixel dimensions, so each file is normalised to `fill="currentColor"` with the width and height removed; without that the stylesheet cannot tint or size them.
+
+Simple Icons has removed its OpenAI and Microsoft marks, and Lineicons has no OpenAI, Claude or generic Linux mark, so no single set covers everything; each mark is taken from the set that still publishes it.
+
+Linux hosts resolve to their distribution where a mark exists, so an Ubuntu machine shows the Ubuntu circle of friends in `#e95420` rather than a generic Tux, and the System row reads `ubuntu 26.04` because `os_version` carries `VERSION_ID` from the same `os-release` read. macOS and Windows report no version, so their row is just the system name. The mapping lives in `osOf` on the client and `linux_flavour` on the server; adding a distribution means one entry in each plus the vendored mark. A host running a Mushu older than this change sends no `os` at all and falls back to the generic glyph.
+
+Agent and OS marks are drawn in their official colour, held in `--brand-*` custom properties. Apple and OpenAI publish black marks whose dark-background variant is white, so those two are white here. State is expressed on the chip border only: recolouring the mark by status meant an agent was never shown in its own colour.
+
+Icon loading is awaited through `iconsReady` before any render that draws one, including `renderHeader()`. This is not cosmetic. The gallery compares pixels exactly, and drawing chips before the marks resolve produced a baseline that passed when written and failed when re-checked.
+
 ## Visual regression gallery
 
-The Playwright suite serves the real files in `web/` and supplies deterministic API, terminal socket, local-storage, and service-worker fixtures only inside the browser test. There is no production demo mode. Its five 390x844 dark Chromium baselines live in `output/playwright/mushu-gallery`: a Claude session in the terminal, the two-host drawer, screenshot Compose, Settings, and the real in-app notification attention card.
+The Playwright suite serves the real files in `web/` and supplies deterministic API, terminal socket, local-storage, and service-worker fixtures only inside the browser test. There is no production demo mode. Its six 390x844 dark Chromium baselines live in `output/playwright/mushu-gallery`: a Claude session in the terminal, the two-host drawer, screenshot Compose, the Settings host list, a host detail page, and the real in-app notification attention card.
 
 Install the pinned dependency with `bun install --frozen-lockfile`, compare the current UI with `bun run visual:check`, and intentionally replace all committed baselines with `bun run visual:update`. Both commands route through `scripts/visual`, which uses the same pinned Playwright Noble container as CI so macOS and Linux do not produce competing baselines. Never update baselines as part of the check command or in CI: inspect every changed PNG before accepting it.
 

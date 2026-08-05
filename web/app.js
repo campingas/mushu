@@ -1009,18 +1009,48 @@
 
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-  // Brand icons (Bootstrap Icons, currentColor) inlined so CSS can tint them.
+  // Marks are inlined rather than <img>-linked so CSS can tint them: the agent
+  // and OS colours are brand values, and the OS mark also greys out when a host
+  // is unreachable. Brand marks live in vendor/brands, UI icons in vendor/icons.
   const brandOf = { claude: 'claude', codex: 'openai' };
+  const osOf = { macos: 'apple', linux: 'linux', ubuntu: 'ubuntu', windows: 'windows' };
+  const uiOf = {
+    back: 'chevron-left',
+    bell: 'bell-1',
+    pencil: 'pencil-1',
+    trash: 'trash-3',
+    install: 'download-1',
+    refresh: 'refresh-circle-1-clockwise',
+    lock: 'locked-1',
+    plus: 'plus',
+  };
   const icons = {};
-  for (const name of ['claude', 'openai']) {
-    fetch(`/vendor/${name}.svg`).then((r) => r.text()).then((svg) => { icons[name] = svg; });
-  }
+  const ui = {};
+
+  const loadIcon = (path, into, key) =>
+    fetch(`/vendor/${path}.svg`)
+      .then((r) => r.text())
+      .then((svg) => { into[key] = svg; })
+      .catch(() => {});
+
+  // Awaited before any render that draws icons. Settings screenshots are pixel
+  // compared, so a half-loaded icon set would be a flaky baseline, not a
+  // cosmetic race.
+  const iconsReady = Promise.all([
+    ...['claude', 'openai', 'apple', 'linux', 'ubuntu', 'windows'].map((n) => loadIcon(`brands/${n}`, icons, n)),
+    ...Object.entries(uiOf).map(([key, file]) => loadIcon(`icons/${file}`, ui, key)),
+  ]);
+
   const fallbackIcon = '<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><rect x="1" y="2" width="14" height="12" rx="2" fill="none" stroke="currentColor"/><path d="M4 6l2.5 2L4 10M8 10h4" stroke="currentColor" fill="none" stroke-linecap="round"/></svg>';
   const iconFor = (agent) => icons[brandOf[agent]] || fallbackIcon;
+  const osIconFor = (os) => icons[osOf[os]] || fallbackIcon;
 
   const prio = { blocked: 3, working: 2, done: 1, idle: 0, unknown: 0 };
 
-  function renderHeader() {
+  // Awaited like the settings renders: chips are in the terminal screenshot, so
+  // drawing them before the brand marks resolve makes that baseline flaky.
+  async function renderHeader() {
+    await iconsReady;
     const brands = new Map();
     for (const a of agentList) {
       const b = brands.get(a.agent) || { count: 0, status: 'idle' };
@@ -1031,7 +1061,7 @@
     document.getElementById('chips').innerHTML = [...brands]
       .map(
         ([agent, b]) =>
-          `<span class="brand ${b.status}" title="${esc(agent)}">${iconFor(agent)}${b.count > 1 ? `<span class="count">${b.count}</span>` : ''}</span>`
+          `<span class="brand brand-${esc(brandOf[agent] || 'unknown')} ${b.status}" title="${esc(agent)}">${iconFor(agent)}${b.count > 1 ? `<span class="count">${b.count}</span>` : ''}</span>`
       )
       .join('');
   }
@@ -1097,7 +1127,7 @@
     document.getElementById('agent-list').innerHTML = agentList
       .map(
         (a, i) =>
-          `<div class="ws agentrow ${a.status}" data-i="${i}">${iconFor(a.agent)}` +
+          `<div class="ws agentrow brand-${esc(brandOf[a.agent] || 'unknown')} ${a.status}" data-i="${i}">${iconFor(a.agent)}` +
           `<span class="label">${esc(a.agent)}</span>` +
           `<span class="t">${esc(a.title)}</span>` +
           `<button class="act" data-i="${i}">&#8942;</button>` +
@@ -1432,13 +1462,10 @@
   let nextUpdateRequest = 0;
 
   // Bootstrap Icons, inlined so the active Herdr palette can tint them.
-  const hddNetworkIcon = '<svg class="settings-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 5a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5M3 8.5h10a1.5 1.5 0 0 0 1.5-1.5V3A1.5 1.5 0 0 0 13 1.5H3A1.5 1.5 0 0 0 1.5 3v4A1.5 1.5 0 0 0 3 8.5M2.5 3A.5.5 0 0 1 3 2.5h10a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5H3a.5.5 0 0 1-.5-.5zM5 11.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 .5.5v1H13a.5.5 0 0 1 .5.5v1.5a.5.5 0 0 1-1 0v-1H11v1a.5.5 0 0 1-1 0v-2.5H6v2.5a.5.5 0 0 1-1 0v-1H3.5v1a.5.5 0 0 1-1 0V13a.5.5 0 0 1 .5-.5h2z"/></svg>';
-  const pencilIcon = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325"/></svg>';
-  const bellIcon = (on) => on
-    ? '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 16a2 2 0 0 0 1.985-1.75h-3.97A2 2 0 0 0 8 16m.104-14.997A1.5 1.5 0 0 0 6.5 2.5v.086A4.5 4.5 0 0 0 3.5 6.83V10l-1 2v1h11v-1l-1-2V6.83a4.5 4.5 0 0 0-3-4.244V2.5a1.5 1.5 0 0 0-1.396-1.497M4.5 10.236V6.83a3.5 3.5 0 1 1 7 0v3.406l.382.764H4.118z"/></svg>'
-    : '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.646 14.354 1.646 2.354l.708-.708 12 12zM8 16a2 2 0 0 0 1.985-1.75h-3.97A2 2 0 0 0 8 16M3.5 6.83V10l-1 2v1h8.086l-1-1H4.118l.382-.764V6.83c0-.623.163-1.208.448-1.714l-.73-.73A4.48 4.48 0 0 0 3.5 6.83m8 2.756 1 1V6.83a4.5 4.5 0 0 0-3-4.244V2.5a1.5 1.5 0 0 0-2.97-.299l.884.884A3.5 3.5 0 0 1 11.5 6.83z"/></svg>';
-  const faceIdIcon = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 1h-2a.5.5 0 0 0-.5.5v2a.5.5 0 0 1-1 0v-2A1.5 1.5 0 0 1 1.5 0h2a.5.5 0 0 1 0 1m9 0h2a.5.5 0 0 1 .5.5v2a.5.5 0 0 0 1 0v-2A1.5 1.5 0 0 0 14.5 0h-2a.5.5 0 0 0 0 1m-9 14h-2a.5.5 0 0 1-.5-.5v-2a.5.5 0 0 0-1 0v2A1.5 1.5 0 0 0 1.5 16h2a.5.5 0 0 0 0-1m9 0h2a.5.5 0 0 0 .5-.5v-2a.5.5 0 0 1 1 0v2a1.5 1.5 0 0 1-1.5 1.5h-2a.5.5 0 0 1 0-1M3 7.5a.5.5 0 0 1 .5-.5h.75a.5.5 0 0 1 0 1H3.5a.5.5 0 0 1-.5-.5m8.75-.5h.75a.5.5 0 0 1 0 1h-.75a.5.5 0 0 1 0-1M8 4.5a.5.5 0 0 1 .5.5v3.5H9a.5.5 0 0 1 0 1H8A.5.5 0 0 1 7.5 9V5a.5.5 0 0 1 .5-.5m-2.5 6.75a.5.5 0 0 1 .7.1c.38.506.978.9 1.8.9s1.42-.394 1.8-.9a.5.5 0 1 1 .8.6c-.62.827-1.58 1.3-2.6 1.3s-1.98-.473-2.6-1.3a.5.5 0 0 1 .1-.7"/></svg>';
-  document.getElementById('face-icon').innerHTML = faceIdIcon;
+  iconsReady.then(() => {
+    document.getElementById('face-icon').innerHTML = ui.lock || '';
+    document.getElementById('detail-back').innerHTML = ui.back || '';
+  });
 
   async function withSubscriptionOp(inst, operation) {
     const previous = subscriptionOps.get(inst.url) || Promise.resolve();
@@ -1506,58 +1533,183 @@
     });
   }
 
+  // What /api/host last told us about each host, keyed by URL: os, public URL
+  // and build identity. Absence means the last probe failed, which is also how
+  // the list decides whether to draw the OS mark in colour or greyed out.
+  const hostInfo = new Map();
+  // Reachability is tracked apart from the descriptor so a host that goes down
+  // keeps its identity: the OS mark greys out rather than reverting to a
+  // generic glyph, which is the whole point of showing the OS in the list.
+  const hostUp = new Map();
+
+  async function probeHost(inst) {
+    try {
+      const res = await fetch(inst.url + '/api/host', { headers: instHeaders(inst) });
+      if (!res.ok) throw new Error(`host check failed (${res.status})`);
+      const descriptor = await res.json();
+      hostInfo.set(inst.url, descriptor);
+      if (descriptor.host) discoveredNames.set(inst.url, descriptor.host);
+      hostUp.set(inst.url, true);
+      return true;
+    } catch (_) {
+      hostUp.set(inst.url, false);
+      return false;
+    }
+  }
+
+  function hostOsMarkup(inst) {
+    const os = hostInfo.get(inst.url)?.os || 'unknown';
+    const down = hostUp.get(inst.url) === false;
+    return `<span class="host-os os-${esc(os)} ${down ? 'unreachable' : ''}" aria-hidden="true">${osIconFor(os)}</span>`;
+  }
+
   async function renderInstances() {
-    document.getElementById('instance-list').innerHTML = instances
-      .map((inst, i) => {
-        const home = inst.url === location.origin;
-        const updateKey = keyForUpdate(inst);
-        return (
-          `<div class="host-card ${inst === active ? 'active' : ''}">` + hddNetworkIcon +
-          `<div class="host-copy">` +
-          `<button class="host-name" data-rename="${i}" aria-label="Rename ${esc(displayName(inst))}">` +
-          `<span>${esc(displayName(inst))}</span>${pencilIcon}</button>` +
-          `<div class="host-url">${esc(new URL(inst.url).host)}</div>` +
-          `<div class="host-version" data-update-status="${updateKey}">checking version…</div></div>` +
-          `<div class="host-controls">` +
-          `<button class="alert" data-alert="${i}" aria-label="Checking alerts">…</button>` +
-          `<button class="update" data-update="${i}" data-update-key="${updateKey}" disabled aria-label="Checking ${esc(displayName(inst))} for updates">checking…</button>` +
-          (home ? '' : `<button class="rm" data-rm="${i}" aria-label="Remove ${esc(displayName(inst))} host">&#10005;</button>`) +
-          `</div>` +
-          `</div>`
-        );
-      })
-      .join('');
+    await iconsReady;
     const sub = await localSubscription();
+    document.getElementById('instance-list').innerHTML = instances
+      .map(
+        (inst, i) =>
+          `<button class="host-row" data-host="${i}" aria-label="${esc(displayName(inst))} settings">` +
+          hostOsMarkup(inst) +
+          `<span class="host-row-name">${esc(displayName(inst))}</span>` +
+          `<span class="host-row-alert" data-alert="${i}" aria-hidden="true">${ui.bell || ''}</span>` +
+          `<span class="host-row-go" aria-hidden="true">${ui.back || ''}</span>` +
+          `</button>`
+      )
+      .join('');
+
     await Promise.all(
       instances.map(async (inst, i) => {
-        await Promise.all([
-          loadUpdate(inst, false),
-          (async () => {
-            const btn = document.querySelector(`[data-alert="${i}"]`);
-            if (!btn) return;
-            if (!sub) return setAlertBtn(btn, false);
-            try {
-              const { response: res, subscribed } = await refreshEnabledSubscription(inst, sub);
-              if (!res.ok) {
-                btn.textContent = res.status === 401 ? 'bad token' : `err ${res.status}`;
-                return;
-              }
-              setAlertBtn(btn, subscribed);
-            } catch (_) {
-              btn.textContent = 'offline';
-            }
-          })(),
-        ]);
+        const [reachable] = await Promise.all([probeHost(inst), refreshAlertState(inst, i, sub)]);
+        const row = document.querySelector(`.host-row[data-host="${i}"]`);
+        if (!row) return;
+        // Patch in place rather than re-rendering the list: a re-render while
+        // the other probes are still in flight would drop their results.
+        row.querySelector('.host-os')?.replaceWith(
+          new DOMParser().parseFromString(hostOsMarkup(inst), 'text/html').body.firstChild
+        );
+        row.querySelector('.host-row-name').textContent = displayName(inst);
+        if (!reachable) row.classList.add('unreachable');
       })
     );
   }
 
-  function setAlertBtn(btn, on) {
-    btn.innerHTML = bellIcon(on);
-    btn.title = on ? 'Disable alerts' : 'Enable alerts';
-    btn.setAttribute('aria-label', btn.title);
-    btn.classList.toggle('on', on);
+  // Alerts are a per-host push subscription, so the state has to be read from
+  // each host rather than from the device.
+  async function refreshAlertState(inst, i, sub) {
+    const mark = document.querySelector(`.host-row-alert[data-alert="${i}"]`);
+    if (!mark) return;
+    if (!sub) return setAlertMark(mark, false);
+    try {
+      const { response: res, subscribed } = await refreshEnabledSubscription(inst, sub);
+      setAlertMark(mark, res.ok && subscribed);
+    } catch (_) {
+      setAlertMark(mark, false);
+    }
   }
+
+  function setAlertMark(mark, on) {
+    mark.classList.toggle('on', on);
+    mark.title = on ? 'Alerts on' : 'Alerts off';
+    alertState.set(mark.dataset.alert, on);
+  }
+
+  // --- host detail ---
+
+  // Alerts state by row index, so the detail page can draw the toggle without
+  // re-probing every host it did not open.
+  const alertState = new Map();
+  let detailIndex = null;
+
+  const detailRow = (key, value) =>
+    `<div class="detail-row"><span class="detail-key">${esc(key)}</span>` +
+    `<span class="detail-value">${esc(value)}</span></div>`;
+
+  async function renderHostDetail() {
+    if (detailIndex === null) return;
+    await iconsReady;
+    const i = detailIndex;
+    const inst = instances[i];
+    if (!inst) return closeHostDetail();
+    const home = inst.url === location.origin;
+    const info = hostInfo.get(inst.url);
+    const reachable = hostUp.get(inst.url) !== false;
+    const build = info?.build;
+    const updateKey = keyForUpdate(inst);
+    const alertsOn = alertState.get(String(i)) === true;
+
+    document.getElementById('detail-title').textContent = displayName(inst);
+    document.getElementById('detail-body').innerHTML =
+      `<div class="detail-hero">${hostOsMarkup(inst)}` +
+      `<div class="detail-hero-copy">` +
+      `<button class="host-name" data-rename="${i}" aria-label="Rename ${esc(displayName(inst))}">` +
+      `<span>${esc(displayName(inst))}</span>${ui.pencil || ''}</button>` +
+      `<div class="detail-sub">${reachable ? 'reachable' : 'unreachable'}</div>` +
+      `</div></div>` +
+
+      `<div class="detail-group">` +
+      detailRow('Address', info?.url || 'not published') +
+      detailRow('Origin', new URL(inst.url).host) +
+      detailRow('System', [info?.os, info?.os_version].filter(Boolean).join(' ') || 'unknown') +
+      `</div>` +
+
+      `<div class="detail-group">` +
+      detailRow('Version', build?.version || 'unknown') +
+      detailRow('Release', build?.tag || 'unknown') +
+      detailRow('Commit', build ? build.sha.slice(0, 12) : 'unknown') +
+      detailRow('Channel', build?.kind || 'unknown') +
+      `</div>` +
+
+      `<div class="detail-group">` +
+      `<button class="detail-action alert ${alertsOn ? 'on' : ''}" data-alert="${i}">` +
+      `<span class="detail-action-icon">${ui.bell || ''}</span>` +
+      `<span class="detail-action-label">Alerts</span>` +
+      `<span class="detail-action-state">${alertsOn ? 'on' : 'off'}</span></button>` +
+      `</div>` +
+
+      `<div class="detail-group">` +
+      `<div class="detail-row"><span class="detail-key">Updates</span>` +
+      `<span class="detail-value" data-update-status="${updateKey}">checking…</span></div>` +
+      `<div class="detail-actions">` +
+      `<button class="detail-button" data-refresh-host="${i}">` +
+      `<span class="detail-action-icon">${ui.refresh || ''}</span>check</button>` +
+      `<button class="detail-button update" data-update="${i}" data-update-key="${updateKey}" disabled` +
+      ` aria-label="Checking ${esc(displayName(inst))} for updates">` +
+      `<span class="detail-action-icon">${ui.install || ''}</span><span>checking…</span></button>` +
+      `</div></div>` +
+
+      (home
+        ? ''
+        : `<button class="detail-danger rm" data-rm="${i}">` +
+          `<span class="detail-action-icon">${ui.trash || ''}</span>Remove host</button>`);
+
+    // loadUpdate writes through [data-update-status] / [data-update-key], which
+    // only exist once this page is on screen.
+    loadUpdate(inst, false);
+  }
+
+  async function openHostDetail(i) {
+    if (!instances[i]) return;
+    detailIndex = i;
+    document.getElementById('settings-scroll').classList.add('hidden');
+    document.getElementById('host-detail').classList.remove('hidden');
+    await renderHostDetail();
+  }
+
+  function closeHostDetail() {
+    detailIndex = null;
+    document.getElementById('host-detail').classList.add('hidden');
+    document.getElementById('settings-scroll').classList.remove('hidden');
+    renderInstances();
+  }
+
+  // Both settings views read the same state, so anything that changes a host
+  // refreshes whichever of them is on screen.
+  async function refreshSettingsViews() {
+    await renderInstances();
+    await renderHostDetail();
+  }
+
 
   async function toggleAlerts(i, on) {
     const inst = instances[i];
@@ -1581,7 +1733,7 @@
     } catch (e) {
       setStatus(e.message || 'toggle failed', false);
     }
-    renderInstances();
+    refreshSettingsViews();
   }
 
   function keyForUpdate(inst) {
@@ -1956,12 +2108,17 @@
   document.getElementById('pair-camera').addEventListener('click', startPairCamera);
   document.getElementById('pair-close').addEventListener('click', () => clearPairState(true));
   document.getElementById('update-refresh').addEventListener('click', checkAllUpdates);
-  document.getElementById('instance-list').addEventListener('click', (ev) => {
+
+  function onHostControlClick(ev) {
+    const row = ev.target.closest('.host-row');
+    if (row) return openHostDetail(Number(row.dataset.host));
     const alertBtn = ev.target.closest('button.alert');
     if (alertBtn) {
       const i = Number(alertBtn.dataset.alert);
       return toggleAlerts(i, !alertBtn.classList.contains('on'));
     }
+    const checkBtn = ev.target.closest('[data-refresh-host]');
+    if (checkBtn) return loadUpdate(instances[Number(checkBtn.dataset.refreshHost)], true);
     const renameBtn = ev.target.closest('[data-rename]');
     if (renameBtn) {
       const inst = instances[Number(renameBtn.dataset.rename)];
@@ -1974,7 +2131,7 @@
       if (name) inst.name = name;
       else delete inst.name;
       saveInstances();
-      renderInstances();
+      refreshSettingsViews();
       if (inst === active) applyHostLabel(inst);
       return;
     }
@@ -1986,7 +2143,8 @@
       const [removed] = instances.splice(i, 1);
       if (removed === active) setActive(location.origin);
       saveInstances();
-      renderInstances();
+      // The removed host's detail page is what we were standing on.
+      closeHostDetail();
       return;
     }
     const updateBtn = ev.target.closest('button.update');
@@ -1995,7 +2153,11 @@
       if (updateBtn.dataset.refreshOnly) return loadUpdate(instances[i], true);
       return confirmUpdate(i);
     }
-  });
+  }
+
+  document.getElementById('instance-list').addEventListener('click', onHostControlClick);
+  document.getElementById('host-detail').addEventListener('click', onHostControlClick);
+  document.getElementById('detail-back').addEventListener('click', closeHostDetail);
   document.getElementById('update-cancel').addEventListener('click', () => {
     updatePending = null;
     document.getElementById('update-confirm').classList.add('hidden');

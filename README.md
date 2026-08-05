@@ -128,13 +128,13 @@ These anonymous Chromium baselines are generated from the real PWA assets by the
 |---|---|
 | ![A Claude session in the terminal](output/playwright/mushu-gallery/terminal-chat.png) | ![Anonymous two-host drawer](output/playwright/mushu-gallery/two-host-drawer.png) |
 
-| Screenshot compose | Settings |
+| Settings | Host detail |
 |---|---|
-| ![Screenshot compose for a named agent](output/playwright/mushu-gallery/screenshot-compose.png) | ![Anonymous Settings hosts](output/playwright/mushu-gallery/settings.png) |
+| ![Anonymous Settings hosts](output/playwright/mushu-gallery/settings.png) | ![Anonymous host detail page](output/playwright/mushu-gallery/host-detail.png) |
 
-| Notification attention card |
-|---|
-| ![In-app agent attention card](output/playwright/mushu-gallery/notification-attention.png) |
+| Screenshot compose | Notification attention card |
+|---|---|
+| ![Screenshot compose for a named agent](output/playwright/mushu-gallery/screenshot-compose.png) | ![In-app agent attention card](output/playwright/mushu-gallery/notification-attention.png) |
 
 ## Status
 

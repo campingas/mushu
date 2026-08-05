@@ -28,6 +28,14 @@
   --status-red: #da3633;
   --status-green: #238636;
   --backdrop: rgba(0, 0, 0, 0.5);
+  /* Official brand values. Apple and OpenAI publish black marks, whose
+     dark-background variant is white; the rest use their published hex. */
+  --brand-claude: #d97757;
+  --brand-openai: #ffffff;
+  --brand-apple: #ffffff;
+  --brand-linux: #fcc624;
+  --brand-ubuntu: #e95420;
+  --brand-windows: #0078d4;
 }
 
 html, body {
@@ -112,22 +120,24 @@ body {
 
 .brand .count { font-weight: bold; font-size: 12px; }
 
-.brand.working { color: var(--yellow); border-color: var(--yellow-soft); }
-.brand.done { color: var(--green); }
+/* Only the border carries state, so an agent is always recognisable by its
+   own colour rather than being recoloured by whatever it is doing. */
+.brand.working { border-color: var(--yellow); }
+.brand.done { border-color: var(--green); }
 .brand.blocked {
-  color: var(--red);
   border-color: var(--red);
   animation: pulse 1.2s ease-in-out infinite;
 }
+
+.brand-claude, .agentrow.brand-claude svg { color: var(--brand-claude); }
+.brand-openai, .agentrow.brand-openai svg { color: var(--brand-openai); }
+.brand .count { color: var(--fg); }
 
 @keyframes pulse {
   50% { box-shadow: 0 0 10px var(--red-glow); }
 }
 
-.ws.agentrow svg { width: 18px; height: 18px; flex-shrink: 0; }
-.ws.agentrow.working svg { color: var(--yellow); }
-.ws.agentrow.blocked svg { color: var(--red); }
-.ws.agentrow.done svg { color: var(--green); }
+.ws.agentrow svg { width: 18px; height: 18px; flex-shrink: 0; fill: currentColor; }
 
 .ws.agentrow .t {
   color: var(--muted);
@@ -600,6 +610,7 @@ body {
   inset: 0;
   z-index: 40;
   min-height: 0;
+  color: var(--fg);
   background: var(--bg);
   display: flex;
   flex-direction: column;
@@ -628,6 +639,108 @@ body {
   min-height: 0;
   overflow-y: auto;
   padding: 18px 14px calc(24px + var(--safe-bottom, env(safe-area-inset-bottom)));
+}
+
+#settings-scroll.hidden, #host-detail.hidden { display: none; }
+
+/* A page rather than an expanding card: the host's editable settings, address,
+   build identity and removal all live here so the list stays scannable. */
+#host-detail {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 14px calc(24px + var(--safe-bottom, env(safe-area-inset-bottom)));
+}
+
+#detail-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+
+#detail-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  padding: 6px;
+  color: var(--fg);
+  background: var(--surface-0);
+  border: 1px solid var(--overlay-0);
+  border-radius: 10px;
+}
+
+#detail-back svg { display: block; width: 100%; height: 100%; fill: currentColor; }
+#detail-title { flex: 1; min-width: 0; overflow: hidden; font: bold 16px ui-monospace, monospace; text-overflow: ellipsis; white-space: nowrap; }
+
+.detail-hero { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.detail-hero .host-os { flex: 0 0 30px; width: 30px; height: 30px; }
+.detail-hero-copy { flex: 1; min-width: 0; }
+.detail-sub { margin-top: 2px; color: var(--muted); font: 12px ui-monospace, monospace; }
+
+.detail-group {
+  margin-bottom: 12px;
+  padding: 4px 14px;
+  background: var(--panel);
+  border: 1px solid var(--overlay-0);
+  border-radius: 14px;
+}
+
+.detail-row { display: flex; align-items: baseline; gap: 12px; padding: 10px 0; }
+.detail-row + .detail-row { border-top: 1px solid var(--surface-0); }
+.detail-key { flex: 0 0 76px; color: var(--muted); font: 12px ui-monospace, monospace; }
+.detail-value { flex: 1; min-width: 0; font: 12px/1.5 ui-monospace, monospace; overflow-wrap: anywhere; }
+
+.detail-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 0;
+  color: var(--fg);
+  background: none;
+  border: 0;
+  font: 13px ui-monospace, monospace;
+}
+
+.detail-action-label { flex: 1; text-align: left; }
+.detail-action-state { color: var(--muted); }
+.detail-action.on .detail-action-icon { color: var(--green); }
+.detail-action.on .detail-action-state { color: var(--green); }
+.detail-action-icon { display: block; flex: 0 0 18px; width: 18px; height: 18px; color: var(--muted); }
+.detail-action-icon svg { display: block; width: 100%; height: 100%; fill: currentColor; }
+
+.detail-actions { display: flex; gap: 8px; padding: 0 0 12px; }
+
+.detail-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 10px;
+  color: var(--fg);
+  background: var(--surface-0);
+  border: 1px solid var(--overlay-0);
+  border-radius: 10px;
+  font: 12px ui-monospace, monospace;
+}
+
+.detail-button.update { color: var(--accent); border-color: var(--accent); }
+.detail-button:disabled { opacity: 0.5; }
+
+.detail-danger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 12px;
+  color: var(--red);
+  background: none;
+  border: 1px solid var(--red);
+  border-radius: 12px;
+  font: 13px ui-monospace, monospace;
 }
 
 .settings-section + .settings-section { margin-top: 28px; }
@@ -662,7 +775,7 @@ body {
 
 #instance-list { display: flex; flex-direction: column; gap: 8px; }
 
-.host-card, .settings-card {
+.host-card, .settings-card, .host-row {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -673,9 +786,40 @@ body {
   border-radius: 14px;
 }
 
-.host-card.active {
-  border-color: var(--green);
+/* The list answers only "which hosts, are they up, are alerts on". Everything
+   editable lives one tap deeper, on the detail page. */
+.host-row {
+  width: 100%;
+  margin-bottom: 8px;
+  text-align: left;
+  font: inherit;
 }
+
+.host-row:active { background: var(--surface-0); }
+.host-row-name { flex: 1; min-width: 0; overflow: hidden; font: bold 14px ui-monospace, monospace; text-overflow: ellipsis; white-space: nowrap; }
+
+.host-os {
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  color: var(--muted);
+}
+
+.host-os svg { display: block; width: 100%; height: 100%; fill: currentColor; }
+.host-os.os-macos { color: var(--brand-apple); }
+.host-os.os-linux { color: var(--brand-linux); }
+.host-os.os-ubuntu { color: var(--brand-ubuntu); }
+.host-os.os-windows { color: var(--brand-windows); }
+/* An unreachable host keeps its mark but loses its colour, so the list reads
+   at a glance without a second status element per row. */
+.host-os.unreachable { color: var(--muted); opacity: 0.4; }
+
+.host-row-alert { flex: 0 0 18px; width: 18px; height: 18px; color: var(--overlay-1); }
+.host-row-alert svg { display: block; width: 100%; height: 100%; fill: currentColor; }
+.host-row-alert.on { color: var(--green); }
+
+.host-row-go { flex: 0 0 16px; width: 16px; height: 16px; color: var(--muted); transform: rotate(180deg); }
+.host-row-go svg { display: block; width: 100%; height: 100%; fill: currentColor; }
 
 .settings-icon {
   width: 22px;

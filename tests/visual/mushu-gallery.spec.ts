@@ -159,7 +159,19 @@ async function installHarness(page: Page, attention = false) {
   await page.route('**/*', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
-    if (url.pathname === '/api/host') return json(route, { host: url.hostname === 'workbench.test' ? 'workbench' : 'studio', theme: { name: 'catppuccin' } });
+    if (url.pathname === '/api/host') {
+      const workbench = url.hostname === 'workbench.test';
+      return json(route, {
+        host: workbench ? 'workbench' : 'studio',
+        os: workbench ? 'ubuntu' : 'macos',
+        os_version: workbench ? '26.04' : null,
+        // Reserved .test name on purpose: a realistic tailnet address here
+        // would trip the fixture anonymity assertion.
+        url: workbench ? 'https://workbench.test' : 'https://studio.test',
+        build: { version: '0.4.0', tag: 'v0.4.0', sha: '0123456789abcdef', kind: 'stable' },
+        theme: { name: 'catppuccin' },
+      });
+    }
     if (url.pathname === '/api/agents') return json(route, { host: 'studio', agents, workspaces, tabs });
     if (url.pathname === '/api/attention') return json(route, {
       pane_id: 'pane-claude', seq: 18, agent: 'claude', title: 'Allow the test command?',
@@ -179,8 +191,8 @@ async function installHarness(page: Page, attention = false) {
   });
   await expect(page.locator('#hostname')).toHaveText('studio');
   await expect(page.locator('#chips .brand')).toHaveCount(2);
-  await expect(page.locator('#chips .bi-openai')).toHaveCount(1);
-  await expect(page.locator('#chips .bi-claude')).toHaveCount(1);
+  await expect(page.locator('#chips .brand-openai')).toHaveCount(1);
+  await expect(page.locator('#chips .brand-claude')).toHaveCount(1);
 
   const assertHealthy = async () => {
     await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth && document.body.scrollWidth <= window.innerWidth)).toBe(true);
@@ -263,9 +275,30 @@ test('Settings', async ({ page }) => {
   const healthy = await installHarness(page);
   await page.locator('#settings-btn').click();
   await expect(page.locator('#settings')).toBeVisible();
-  await expect(page.locator('.host-card')).toHaveCount(2);
-  await expect(page.locator('.host-version')).toContainText(['v0.4.0', 'v0.4.0']);
+  await expect(page.locator('.host-row')).toHaveCount(2);
+  // Both hosts answer /api/host, so both marks are in colour rather than greyed.
+  await expect(page.locator('.host-os.os-macos')).toHaveCount(1);
+  await expect(page.locator('.host-os.os-ubuntu')).toHaveCount(1);
+  await expect(page.locator('.host-os.unreachable')).toHaveCount(0);
   await capture(page, 'settings.png', healthy);
+});
+
+test('host detail', async ({ page }) => {
+  const healthy = await installHarness(page);
+  await page.locator('#settings-btn').click();
+  // The second host is not the home instance, so this view carries the whole
+  // page including removal, which the home host deliberately hides.
+  await page.locator('.host-row').nth(1).click();
+  await expect(page.locator('#host-detail')).toBeVisible();
+  await expect(page.locator('#detail-title')).toHaveText('workbench');
+  await expect(page.locator('.detail-sub')).toHaveText('reachable');
+  await expect(page.locator('.detail-danger')).toHaveCount(1);
+  await expect(page.locator('#detail-body')).toContainText('ubuntu 26.04');
+  // The update check resolves asynchronously; capturing before it lands would
+  // freeze "checking…" into the baseline.
+  await expect(page.locator('[data-update-status]')).toContainText('v0.4.0');
+  await expect(page.locator('.detail-button.update')).toHaveText(/up to date/);
+  await capture(page, 'host-detail.png', healthy);
 });
 
 test('in-app notification attention card', async ({ page }) => {
