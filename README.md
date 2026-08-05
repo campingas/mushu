@@ -63,7 +63,7 @@ Configuration is all environment variables:
 | `MUSHU_TOKEN` | required without a token file | compatible inline access token, 16+ chars |
 | `MUSHU_BIND` | `127.0.0.1:8422` | listen address |
 | `MUSHU_CMD` | `herdr` | command attached to the web terminal (e.g. `tmux new-session -A -s main`) |
-| `MUSHU_HOST` | hostname | label shown in the inbox and notifications |
+| `MUSHU_HOST` | hostname | label shown in the inbox and notifications; a per-device rename in Settings overrides it in the app |
 | `MUSHU_URL` | Tailscale Serve mapping | public URL used by `mushuctl pair`, when auto-discovery cannot find it |
 | `HERDR_CONFIG_PATH` | Herdr/XDG default | inherited Herdr config path used only to adapt the active host theme; ignored for a non-Herdr `MUSHU_CMD` |
 
