@@ -317,6 +317,20 @@
   };
   const shortHost = (url) => new URL(url).hostname.split('.')[0];
 
+  // A nickname set in Settings wins over every discovered name, so one rename
+  // reaches the chip, the drawer, and the host list at once. Without a nickname
+  // nothing changes: the URL label here, and the host's own name in the chip
+  // once /api/host answers. The chip colour follows whichever name is shown,
+  // because the hue is derived from that string.
+  // Names /api/host has reported this session, kept in memory rather than in
+  // mushu_instances so a cached label can never go stale on disk.
+  const discoveredNames = new Map();
+  const displayName = (inst) => inst.name || discoveredNames.get(inst.url) || shortHost(inst.url);
+  const applyHostLabel = (inst) => {
+    document.documentElement.style.setProperty('--host-h', hostHue(displayName(inst)));
+    document.getElementById('hostname').textContent = displayName(inst);
+  };
+
   // Re-pairing this host while the vault holds the tokens.
   if (vaultKey && pairedToken) {
     const home = instances.find((i) => i.url === location.origin);
@@ -337,8 +351,7 @@
       headers: { ...(opts.headers || {}), 'x-mushu-token': active.token || '' },
     });
 
-  document.documentElement.style.setProperty('--host-h', hostHue(shortHost(active.url)));
-  document.getElementById('hostname').textContent = shortHost(active.url);
+  applyHostLabel(active);
 
   let connectEpoch = 0;
   let connectInFlightEpoch = null;
@@ -366,9 +379,10 @@
         const descriptor = await res.json();
         if (epoch !== connectEpoch || instance !== active) return;
         applyPalette(resolvePalette(descriptor.theme));
+        // A nickname is the owner's explicit choice, so discovery never overwrites it.
         if (descriptor.host) {
-          document.documentElement.style.setProperty('--host-h', hostHue(descriptor.host));
-          document.getElementById('hostname').textContent = descriptor.host;
+          discoveredNames.set(instance.url, descriptor.host);
+          if (!instance.name) applyHostLabel(instance);
         }
       }
     } catch (_) {
@@ -430,8 +444,7 @@
     } catch (_) {}
     term.reset();
     retryMs = 500;
-    document.documentElement.style.setProperty('--host-h', hostHue(shortHost(url)));
-    document.getElementById('hostname').textContent = shortHost(url);
+    applyHostLabel(inst);
     connect();
     refreshAgents();
   }
@@ -1032,8 +1045,12 @@
       agentList = agents;
       workspaceList = workspaces || [];
       tabList = tabs || [];
-      document.documentElement.style.setProperty('--host-h', hostHue(host));
-      document.getElementById('hostname').textContent = host;
+      // The agent poll reports the host's own name too; like theme discovery it
+      // records the name but never overrides a nickname chosen in Settings.
+      if (host) {
+        discoveredNames.set(forInstance.url, host);
+        if (!forInstance.name) applyHostLabel(forInstance);
+      }
       renderHeader();
       if (!drawer.classList.contains('hidden')) {
         renderWorkspaces();
@@ -1094,7 +1111,7 @@
       .map(
         (inst) =>
           `<div class="ws host ${inst === active ? 'focused' : ''}" data-url="${esc(inst.url)}">` +
-          `<span class="label">${esc(shortHost(inst.url))}</span>` +
+          `<span class="label">${esc(displayName(inst))}</span>` +
           `<span class="t">${esc(new URL(inst.url).host)}</span></div>`
       )
       .join('');
@@ -1416,6 +1433,7 @@
 
   // Bootstrap Icons, inlined so the active Herdr palette can tint them.
   const hddNetworkIcon = '<svg class="settings-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 5a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5M3 8.5h10a1.5 1.5 0 0 0 1.5-1.5V3A1.5 1.5 0 0 0 13 1.5H3A1.5 1.5 0 0 0 1.5 3v4A1.5 1.5 0 0 0 3 8.5M2.5 3A.5.5 0 0 1 3 2.5h10a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5H3a.5.5 0 0 1-.5-.5zM5 11.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 .5.5v1H13a.5.5 0 0 1 .5.5v1.5a.5.5 0 0 1-1 0v-1H11v1a.5.5 0 0 1-1 0v-2.5H6v2.5a.5.5 0 0 1-1 0v-1H3.5v1a.5.5 0 0 1-1 0V13a.5.5 0 0 1 .5-.5h2z"/></svg>';
+  const pencilIcon = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325"/></svg>';
   const bellIcon = (on) => on
     ? '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 16a2 2 0 0 0 1.985-1.75h-3.97A2 2 0 0 0 8 16m.104-14.997A1.5 1.5 0 0 0 6.5 2.5v.086A4.5 4.5 0 0 0 3.5 6.83V10l-1 2v1h11v-1l-1-2V6.83a4.5 4.5 0 0 0-3-4.244V2.5a1.5 1.5 0 0 0-1.396-1.497M4.5 10.236V6.83a3.5 3.5 0 1 1 7 0v3.406l.382.764H4.118z"/></svg>'
     : '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.646 14.354 1.646 2.354l.708-.708 12 12zM8 16a2 2 0 0 0 1.985-1.75h-3.97A2 2 0 0 0 8 16M3.5 6.83V10l-1 2v1h8.086l-1-1H4.118l.382-.764V6.83c0-.623.163-1.208.448-1.714l-.73-.73A4.48 4.48 0 0 0 3.5 6.83m8 2.756 1 1V6.83a4.5 4.5 0 0 0-3-4.244V2.5a1.5 1.5 0 0 0-2.97-.299l.884.884A3.5 3.5 0 0 1 11.5 6.83z"/></svg>';
@@ -1495,13 +1513,15 @@
         const updateKey = keyForUpdate(inst);
         return (
           `<div class="host-card ${inst === active ? 'active' : ''}">` + hddNetworkIcon +
-          `<div class="host-copy"><div class="host-name">${esc(shortHost(inst.url))}</div>` +
+          `<div class="host-copy">` +
+          `<button class="host-name" data-rename="${i}" aria-label="Rename ${esc(displayName(inst))}">` +
+          `<span>${esc(displayName(inst))}</span>${pencilIcon}</button>` +
           `<div class="host-url">${esc(new URL(inst.url).host)}</div>` +
           `<div class="host-version" data-update-status="${updateKey}">checking version…</div></div>` +
           `<div class="host-controls">` +
           `<button class="alert" data-alert="${i}" aria-label="Checking alerts">…</button>` +
-          `<button class="update" data-update="${i}" data-update-key="${updateKey}" disabled aria-label="Checking ${esc(shortHost(inst.url))} for updates">checking…</button>` +
-          (home ? '' : `<button class="rm" data-rm="${i}" aria-label="Remove ${esc(shortHost(inst.url))} host">&#10005;</button>`) +
+          `<button class="update" data-update="${i}" data-update-key="${updateKey}" disabled aria-label="Checking ${esc(displayName(inst))} for updates">checking…</button>` +
+          (home ? '' : `<button class="rm" data-rm="${i}" aria-label="Remove ${esc(displayName(inst))} host">&#10005;</button>`) +
           `</div>` +
           `</div>`
         );
@@ -1941,6 +1961,22 @@
     if (alertBtn) {
       const i = Number(alertBtn.dataset.alert);
       return toggleAlerts(i, !alertBtn.classList.contains('on'));
+    }
+    const renameBtn = ev.target.closest('[data-rename]');
+    if (renameBtn) {
+      const inst = instances[Number(renameBtn.dataset.rename)];
+      if (!inst) return;
+      // The nickname is this device's own label; it is never sent to the host,
+      // so an empty answer clears it and discovery takes the name back over.
+      const answer = prompt(`Name for ${shortHost(inst.url)}`, inst.name || '');
+      if (answer === null) return;
+      const name = answer.trim().slice(0, 24);
+      if (name) inst.name = name;
+      else delete inst.name;
+      saveInstances();
+      renderInstances();
+      if (inst === active) applyHostLabel(inst);
+      return;
     }
     const rmBtn = ev.target.closest('button.rm');
     if (rmBtn) {

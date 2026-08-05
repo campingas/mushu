@@ -686,7 +686,25 @@ body {
 }
 
 .host-copy { flex: 1; min-width: 0; }
-.host-name { overflow: hidden; font: bold 14px ui-monospace, monospace; text-overflow: ellipsis; }
+/* The name doubles as the rename control: a fourth button in .host-controls
+   starved the copy column until the host URL broke mid-word on a 390px card. */
+.host-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0;
+  color: var(--fg);
+  background: none;
+  border: 0;
+  font: bold 14px ui-monospace, monospace;
+  text-align: left;
+  text-overflow: ellipsis;
+}
+
+.host-name svg { flex-shrink: 0; width: 12px; height: 12px; fill: var(--muted); }
+.host-name:active svg { fill: var(--fg); }
 .host-url, .host-version, .settings-card-note, #pair-message, #update-confirm-copy {
   margin-top: 3px;
   color: var(--muted);
