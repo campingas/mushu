@@ -43,6 +43,12 @@ struct AppState {
     token: Arc<String>,
     shell_cmd: Arc<Vec<String>>,
     host: Arc<String>,
+    os: &'static str,
+    os_version: Arc<Option<String>>,
+    /// Public address this host is published at, resolved once at startup.
+    /// `None` when there is no `MUSHU_URL` and no Tailscale Serve mapping,
+    /// which is an ordinary configuration rather than an error.
+    public_url: Arc<Option<String>>,
     push: push::PushStore,
     shutdown: watch::Receiver<bool>,
     sessions: SessionTracker,
@@ -208,6 +214,67 @@ fn public_url(bind: SocketAddr) -> Result<String> {
     Ok(format!("https://{}", host_port.trim_end_matches(":443")))
 }
 
+/// What the client needs to identify a host: a name it has a mark for, and the
+/// release of that system when the host publishes one.
+struct HostSystem {
+    os: &'static str,
+    version: Option<String>,
+}
+
+/// The operating system this host runs, normalised to the small set the client
+/// has a mark for. Anything else is reported as `unknown` rather than leaking a
+/// target triple the UI cannot render.
+fn host_system() -> HostSystem {
+    match std::env::consts::OS {
+        "macos" => HostSystem {
+            os: "macos",
+            version: None,
+        },
+        "linux" => linux_system(),
+        "windows" => HostSystem {
+            os: "windows",
+            version: None,
+        },
+        _ => HostSystem {
+            os: "unknown",
+            version: None,
+        },
+    }
+}
+
+/// A Linux host reports its distribution and release, so a row reads as the
+/// machine the owner recognises rather than a generic penguin. An unrecognised
+/// distribution stays `linux`, and an unreadable `os-release` reports neither.
+fn linux_system() -> HostSystem {
+    std::fs::read_to_string("/etc/os-release")
+        .map(|release| linux_system_from(&release))
+        .unwrap_or(HostSystem {
+            os: "linux",
+            version: None,
+        })
+}
+
+fn linux_system_from(release: &str) -> HostSystem {
+    // `ID_LIKE=`, `VERSION_ID=` and `BUILD_ID=` all end in the keys we want, so
+    // the prefix has to match from the start of the line. Values are quoted on
+    // some distributions and bare on others.
+    let field = |key: &str| {
+        release
+            .lines()
+            .find_map(|line| line.trim().strip_prefix(key))
+            .map(|value| value.trim().trim_matches('"').to_string())
+            .filter(|value| !value.is_empty())
+    };
+    let os = match field("ID=") {
+        Some(id) if id.eq_ignore_ascii_case("ubuntu") => "ubuntu",
+        _ => "linux",
+    };
+    HostSystem {
+        os,
+        version: field("VERSION_ID="),
+    }
+}
+
 fn pair() -> Result<()> {
     let bind = bind_addr()?;
     let token = load_token(
@@ -289,10 +356,25 @@ async fn main() -> Result<()> {
     if let Err(error) = uploads.cleanup_expired() {
         warn!("upload cleanup failed: {error:#}");
     }
+    // Resolved once: `public_url` shells out to `tailscale serve status`, which
+    // must never sit in the path of a request. A host with no Serve mapping is
+    // a normal setup, so a failure is reported as "unknown", not fatal.
+    let system = host_system();
+    let public_url = match public_url(bind) {
+        Ok(url) => Some(url),
+        Err(error) => {
+            info!("public URL unavailable: {error:#}");
+            None
+        }
+    };
+
     let state = AppState {
         token: Arc::new(token),
         shell_cmd: Arc::new(shell_cmd),
         host: Arc::new(host.clone()),
+        os: system.os,
+        os_version: Arc::new(system.version),
+        public_url: Arc::new(public_url),
         push: push_store.clone(),
         shutdown: shutdown_rx.clone(),
         sessions: sessions.clone(),
@@ -445,6 +527,9 @@ async fn api_host(headers: HeaderMap, State(state): State<AppState>) -> Response
     }
     Json(serde_json::json!({
         "host": *state.host,
+        "os": state.os,
+        "os_version": *state.os_version,
+        "url": *state.public_url,
         "theme": state.theme.descriptor(),
         "build": update::BUILD,
     }))
@@ -947,13 +1032,61 @@ pub(crate) async fn wait_for_shutdown(shutdown: &mut watch::Receiver<bool>) {
 
 #[cfg(test)]
 mod tests {
-    use super::load_token;
+    use super::{host_system, linux_system_from, load_token};
     use std::{
         ffi::OsString,
         fs,
         path::{Path, PathBuf},
         sync::atomic::{AtomicU64, Ordering},
     };
+
+    #[test]
+    fn host_system_is_one_the_client_can_render() {
+        // The client picks a mark from this exact set; anything else must fall
+        // back rather than reaching the UI as a raw target name.
+        assert!(matches!(
+            host_system().os,
+            "macos" | "linux" | "ubuntu" | "windows" | "unknown"
+        ));
+        #[cfg(target_os = "macos")]
+        assert_eq!(host_system().os, "macos");
+        #[cfg(target_os = "windows")]
+        assert_eq!(host_system().os, "windows");
+        // A Linux host resolves to its distribution when known, so CI on Ubuntu
+        // reports "ubuntu" rather than the generic value.
+        #[cfg(target_os = "linux")]
+        assert!(matches!(host_system().os, "linux" | "ubuntu"));
+    }
+
+    #[test]
+    fn linux_system_reads_the_distribution_and_release() {
+        // Exactly what /etc/os-release looks like on the Ubuntu host this was
+        // built for: bare ID, and an ID_LIKE that must not be mistaken for it.
+        let ubuntu =
+            "PRETTY_NAME=\"Ubuntu 26.04 LTS\"\nVERSION_ID=\"26.04\"\nID=ubuntu\nID_LIKE=debian\n";
+        let system = linux_system_from(ubuntu);
+        assert_eq!(system.os, "ubuntu");
+        assert_eq!(system.version.as_deref(), Some("26.04"));
+
+        assert_eq!(linux_system_from("ID=\"ubuntu\"\n").os, "ubuntu");
+        assert_eq!(linux_system_from("ID=UBUNTU\n").os, "ubuntu");
+
+        // An ID_LIKE alone is not the distribution, and an unknown or absent ID
+        // falls back to the generic mark rather than guessing. VERSION_ID is
+        // still reported, because a release is useful on any distribution.
+        assert_eq!(linux_system_from("ID_LIKE=ubuntu\n").os, "linux");
+        let fedora = linux_system_from("ID=fedora\nVERSION_ID=42\n");
+        assert_eq!(fedora.os, "linux");
+        assert_eq!(fedora.version.as_deref(), Some("42"));
+
+        // Neither field present, and an empty value, report no release at all
+        // rather than an empty string the UI would render as a stray space.
+        let bare = linux_system_from("PRETTY_NAME=\"Whatever\"\n");
+        assert_eq!(bare.os, "linux");
+        assert_eq!(bare.version, None);
+        assert_eq!(linux_system_from("VERSION_ID=\"\"\n").version, None);
+        assert_eq!(linux_system_from("").version, None);
+    }
 
     static NEXT_FILE_ID: AtomicU64 = AtomicU64::new(0);
 

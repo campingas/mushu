@@ -1,0 +1,55 @@
+Brand and operating-system marks
+================================
+
+These files are third-party brand marks, used nominatively to identify the
+agent or operating system a pane or host belongs to. Trademarks remain the
+property of their respective owners; vendoring the glyph is not an endorsement
+and does not transfer any trademark right.
+
+Each file has had its fixed pixel width/height and CSS class attributes removed
+so the stylesheet controls size and colour. Path data is unmodified.
+
+claude.svg, openai.svg
+----------------------
+Bootstrap Icons — https://github.com/twbs/icons
+
+MIT License
+
+Copyright (c) 2019-2024 The Bootstrap Authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+linux.svg
+---------
+Simple Icons — https://github.com/simple-icons/simple-icons
+
+Released under CC0 1.0 Universal. To the extent possible under law, the authors
+have waived all copyright and related or neighboring rights to the icon files.
+See https://creativecommons.org/publicdomain/zero/1.0/
+
+apple.svg, ubuntu.svg, windows.svg
+----------------------------------
+Lineicons (Basic / free set) — https://github.com/LineiconsHQ/Lineicons
+MIT License; the full text is in ../icons/LICENSE.txt, which covers the same
+set. These files were normalised the same way: hardcoded hex replaced with
+`currentColor`, fixed width/height removed.
+
+Lineicons carries no OpenAI or Claude mark, which is why those two come from
+Bootstrap Icons above, and no generic Linux mark, which is why Tux comes from
+Simple Icons.
